@@ -50,8 +50,7 @@ gcloud dataproc batches submit pyspark "gs://$BUCKET_NAME/scripts/$PYSPARK_FILE"
     --batch="$JOB_NAME" \
     --region="$REGION" \
     --deps-bucket="gs://$BUCKET_NAME" \
-    --jars="gs://spark-lib/bigquery/spark-3.4-bigquery-0.31.1.jar" \
-    -- \
+    --jars="spark-3.5-bigquery-0.44.1.jar" \
     --project_id="$PROJECT_ID" \
     --dataset_id="$DATASET_ID" \
     --bucket_name="$BUCKET_NAME"
