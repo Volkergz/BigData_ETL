@@ -37,7 +37,7 @@ def run_pipeline():
     ])
 
     # 2. LECTURA CON ESQUEMA INYECTADO (Eliminamos mergeSchema)
-    input_path = f"gs://{args.bucket_name}/raw/*.parquet"
+    input_path = f"gs://{args.bucket_name}/raw/nyc_tlc/yellow/*.parquet"
     df_raw = spark.read.schema(custom_schema).parquet(input_path)
 
     # 3. TRANSFORMAR Y ASIGNAR LLAVES PRIMARIAS / FORÁNEAS
