@@ -5,7 +5,7 @@
 1. Clona el repositorio en CloudShell
 
 ```
-git clone (https://github.com/Volkergz/BigData_ETL.git)
+git clone https://github.com/Volkergz/BigData_ETL.git
 ```
 
 2. Otorgamos permiso de ejecusión a los archivos
@@ -27,7 +27,7 @@ chmod +x extraction.sh loading.sh transformation.sh
 2. Activamos manualmente el trigger del servicio
 
 ```
-gcloud scheduler jobs run nyc-tlc-monthly-sync --location=**{Añade aqui la región}**
+gcloud scheduler jobs run nyc-tlc-monthly-sync --location={Añade aqui la región}
 ```
 
 > Ahora el **Job** esta descargando todos los archivos, el proceso puede tardar hasta 10min en completarse

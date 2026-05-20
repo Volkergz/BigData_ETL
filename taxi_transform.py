@@ -14,7 +14,7 @@ def run_pipeline():
 
     # 1. LECTURA TOLERANTE A FALLOS
     # mergeSchema=true unifica automáticamente las discrepancias entre int64 y float64
-    input_path = f"gs://{args.bucket_name}/raw/*.parquet"
+    input_path = f"gs://{args.bucket_name}/raw/nyc_tlc/yellow/*.parquet"
     df_raw = spark.read.option("mergeSchema", "true").parquet(input_path)
 
     # 2. TRANSFORMACIÓN Y LIMPIEZA
