@@ -52,9 +52,9 @@ gcloud dataproc batches submit pyspark "gs://$BUCKET_NAME/scripts/$PYSPARK_FILE"
     --deps-bucket="gs://$BUCKET_NAME" \
     --jars="spark-3.5-bigquery-0.44.1.jar" \
     -- \
-    --project="$PROJECT_ID" \
+    --project_id="$PROJECT_ID" \
     --dataset_id="$DATASET_ID" \
-    --deps-bucket="$BUCKET_NAME"
+    --bucket_name="$BUCKET_NAME"
 
 echo "===================================================================================="
 echo "¡Proceso inicializado!= Los datos están siendo procesados e insertados en BigQuery."
