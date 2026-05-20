@@ -8,7 +8,7 @@ echo "Iniciando despliegue de ETL Serverless con Dataproc"
 echo "========================================================================"
 
 # 1. Region
-echo "=== [1/8] Autodetectando región aprovisionada..."
+echo "=== [1/4] Autodetectando región aprovisionada..."
 
 # 1. Extraer la política de localización del proyecto actual
 RAW_LOCATION=$(gcloud beta resource-manager org-policies describe gcp.resourceLocations \
@@ -30,16 +30,16 @@ gcloud config set compute/region $REGION
 echo " - Región identificada y configurada: $REGION"
 
 # 2. Configuración de Variables
-echo "=== [2/8] Configurando variables de entorno..."
+echo "=== [2/4] Configurando variables de entorno..."
 
-export PROJECT_ID="qwiklabs-gcp-01-dd97f76870ab"
+export PROJECT_ID=$(gcloud config get-value project)
 export BUCKET_NAME="ingesta-nyc-tlc-${PROJECT_ID}"
 export DATASET_ID="nyc_analytics"
 export PYSPARK_FILE="taxi_transform.py"
 export JOB_NAME="taxi-etl-job-$(date +%s)"
 
 # 3. Preparación del Codigo
-echo "=== [3/8] Subiendo script PySpark a Cloud Storage... "
+echo "=== [3/4] Subiendo script PySpark a Cloud Storage... "
 gsutil cp "$PYSPARK_FILE" "gs://$BUCKET_NAME/scripts/$PYSPARK_FILE"
 
 # 4. Ejecución del Archivo en Dataproc
