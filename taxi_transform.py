@@ -12,6 +12,9 @@ def run_pipeline():
 
     spark = SparkSession.builder.appName("Taxi_Serverless_ETL").getOrCreate()
 
+    # SOLUCIÓN CRUCIAL: Desactivar el lector vectorizado para permitir conversiones INT32 -> BIGINT
+    spark.conf.set("spark.sql.parquet.enableVectorizedReader", "false")
+
     # 1. DEFINICIÓN DEL ESQUEMA DEFENSIVO (Resuelve el conflicto INT vs BIGINT y DOUBLE)
     # Definimos los tipos más permisivos para absorber cualquier variación entre archivos
     custom_schema = StructType([
