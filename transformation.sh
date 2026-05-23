@@ -38,6 +38,10 @@ export DATASET_ID="nyc_analytics"
 export PYSPARK_FILE="taxi_transform.py"
 export JOB_NAME="taxi-etl-job-$(date +%s)"
 
+gcloud compute networks subnets update default \
+    --region=$REGION \
+    --enable-private-ip-google-access
+
 # 3. Preparación del Codigo
 echo "=== [3/4] Subiendo script PySpark a Cloud Storage... "
 gsutil cp "$PYSPARK_FILE" "gs://$BUCKET_NAME/scripts/$PYSPARK_FILE"
@@ -51,6 +55,7 @@ gcloud dataproc batches submit pyspark "gs://$BUCKET_NAME/scripts/$PYSPARK_FILE"
     --region="$REGION" \
     --deps-bucket="gs://$BUCKET_NAME" \
     --jars="spark-3.5-bigquery-0.44.1.jar" \
+    --subnet="default" \
     -- \
     --project_id="$PROJECT_ID" \
     --dataset_id="$DATASET_ID" \
