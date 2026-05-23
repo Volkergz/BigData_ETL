@@ -24,18 +24,15 @@ def parse_arguments():
     return parser.parse_args()
 
 def generate_surrogate_key_hash(col_list):
-    """Genera una llave subrogada numérica INT64 (BigQuery) determinista basada en hash."""
-    # Concatenamos las columnas con un separador e implementamos SHA-2
+    """Genera una llave subrogada numérica INT64 determinista basada en hash para IDs técnicos."""
     concat_col = F.concat_ws("||", *[F.coalesce(F.col(c).cast(StringType()), F.lit("")) for c in col_list])
-    # Tomamos los primeros 15 caracteres del hash hexadecimal y los convertimos a un entero largo (INT64 de BQ)
     return F.conv(F.substring(F.sha2(concat_col, 256), 1, 15), 16, 10).cast(LongType())
 
 def main():
     args = parse_arguments()
     spark = init_spark()
     
-    # Rutas de almacenamiento en GCS (Asumiendo estructura estándar de ingesta)
-    # Reemplaza 'raw/*.parquet' por tu patrón de archivos específico en GCS
+    # Ruta de los archivos detectada en tu log de Cloud Shell
     input_path = f"gs://{args.bucket_name}/raw/nyc_tlc/yellow/*.parquet"
     
     print(f"[*] Leyendo archivos origen Parquet desde: {input_path}")
@@ -44,7 +41,6 @@ def main():
     # ============================================================================
     # 1. LIMPIEZA Y CALIDAD DE DATOS (DATA CLEANSING)
     # ============================================================================
-    # Filtrar registros inconsistentes habituales en el dataset de TLC NY
     df_cleaned = df_raw.filter(
         (F.col("tpep_pickup_datetime").isNotNull()) &
         (F.col("tpep_dropoff_datetime").isNotNull()) &
@@ -54,60 +50,53 @@ def main():
     )
 
     # ============================================================================
-    # 2. GENERACIÓN DINÁMICA DE DIMENSIONES ESTÁTICAS (SFT / ESCALABILIDAD)
+    # 2. DIMENSIONES ESTÁTICAS (Mapeos fijos según Diccionario)
     # ============================================================================
-    # Dim_Vendor 
+    # Dim_Vendor
     vendor_data = [(1, "Creative Mobile Technologies, LLC"), (2, "VeriFone Inc.")]
     df_dim_vendor = spark.createDataFrame(vendor_data, ["vendor_id_pk", "vendor_name"])
     
-    # Dim_Payment_Type 
+    # Dim_Payment_Type
     payment_data = [
         (1, "Credit card"), (2, "Cash"), (3, "No charge"), 
         (4, "Dispute"), (5, "Unknown"), (6, "Voided trip")
     ]
     df_dim_payment = spark.createDataFrame(payment_data, ["payment_type_id_pk", "payment_description"])
     
-    # Dim_Rate_Code 
+    # Dim_Rate_Code
     rate_data = [
         (1, "Standard rate"), (2, "JFK"), (3, "Newark"), 
         (4, "Nassau or Westchester"), (5, "Negotiated fare"), (6, "Group ride")
     ]
     df_dim_rate = spark.createDataFrame(rate_data, ["rate_code_id_pk", "rate_code_description"])
     
-    # Dim_Store_and_fwd_flag 
+    # Dim_Store_and_fwd_flag
     flag_data = [(1, "Y", "store and forward trip"), (2, "N", "not a store and forward trip")]
     df_dim_flag = spark.createDataFrame(flag_data, ["flag_id_pk", "flag_code", "flag_desc"])
 
     # ============================================================================
-    # 3. CONSTRUCCIÓN DE DIMENSIONES DE ALTA CARDINALIDAD Y TIEMPO
+    # 3. DIMENSIONES DINÁMICAS (ALTA CARDINALIDAD Y TIEMPO)
     # ============================================================================
     
-    # --- DIM_LOCATION (Extracción única de coordenadas origen y destino) ---
-    df_pickups = df_cleaned.select(
-        F.col("Pickup_longitude").alias("longitude"), 
-        F.col("Pickup_latitude").alias("latitude")
-    ).distinct()
+    # --- DIM_LOCATION (Adaptada al nuevo formato de zonas TLC PULocationID / DOLocationID) ---
+    df_puzones = df_cleaned.select(F.col("PULocationID").alias("zone_id")).distinct()
+    df_dozones = df_cleaned.select(F.col("DOLocationID").alias("zone_id")).distinct()
     
-    df_dropoffs = df_cleaned.select(
-        F.col("Dropoff_longitude").alias("longitude"), 
-        F.col("Dropoff_latitude").alias("latitude")
-    ).distinct()
+    df_dim_location_raw = df_puzones.union(df_dozones).distinct().filter(F.col("zone_id").isNotNull())
     
-    df_dim_location_raw = df_pickups.union(df_dropoffs).distinct().filter(
-        (F.col("longitude") != 0.0) & (F.col("latitude") != 0.0)
-    )
-    
+    # Mapeamos el ID de la zona directamente como llave primaria (location_id_pk)
+    # Dejamos las coordenadas en NULL ya que el dataset moderno no las provee y seteamos la relación FK a zona
     df_dim_location = df_dim_location_raw.withColumn(
-        "location_id_pk", generate_surrogate_key_hash(["latitude", "longitude"])
+        "location_id_pk", F.col("zone_id").cast(LongType())
     ).withColumn(
-        "latitude", F.col("latitude").cast(DecimalType(18, 9))
+        "latitude", F.lit(None).cast(DecimalType(18, 9))
     ).withColumn(
-        "longitude", F.col("longitude").cast(DecimalType(18, 9))
+        "longitude", F.lit(None).cast(DecimalType(18, 9))
     ).withColumn(
-        "zone_id_fk", F.lit(None).cast(LongType()) # Dejar listo para mapeo posterior con zonas TLC si se requiere
+        "zone_id_fk", F.col("zone_id").cast(LongType())
     ).select("location_id_pk", "latitude", "longitude", "zone_id_fk")
 
-    # --- DIM_TIME (Extracción y parseo de marcas de tiempo) ---
+    # --- DIM_TIME ---
     df_times_raw = df_cleaned.select(F.col("tpep_pickup_datetime").alias("ts")).union(
         df_cleaned.select(F.col("tpep_dropoff_datetime").alias("ts"))
     ).distinct()
@@ -131,24 +120,24 @@ def main():
     ).distinct()
 
     # ============================================================================
-    # 4. CONSTRUCCIÓN DE LA TABLA DE HECHOS (FACT_TRIPS)
+    # 4. TABLA DE HECHOS (FACT_TRIPS)
     # ============================================================================
     
-    # Preparación de llaves foráneas y mapeos numéricos
+    # Construcción aplicando nombres exactos del Parquet (ej: 'RatecodeID' y 'payment_type')
     df_fact_prep = df_cleaned.withColumn(
-        "trip_id_pk", generate_surrogate_key_hash(["VendorID", "tpep_pickup_datetime", "Dropoff_longitude", "Dropoff_latitude"])
+        "trip_id_pk", generate_surrogate_key_hash(["VendorID", "tpep_pickup_datetime", "PULocationID", "DOLocationID"])
     ).withColumn(
         "vendor_id_fk", F.col("VendorID").cast(LongType())
     ).withColumn(
-        "rate_code_id_fk", F.col("RateCodeID").cast(LongType())
+        "rate_code_id_fk", F.col("RatecodeID").cast(LongType())
     ).withColumn(
-        "payment_type_id_fk", F.col("Payment_type").cast(LongType())
+        "payment_type_id_fk", F.col("payment_type").cast(LongType())
     ).withColumn(
-        "pickup_location_id_fk", generate_surrogate_key_hash(["Pickup_latitude", "Pickup_longitude"])
+        "pickup_location_id_fk", F.col("PULocationID").cast(LongType())
     ).withColumn(
-        "dropoff_location_id_fk", generate_surrogate_key_hash(["Dropoff_latitude", "Dropoff_longitude"])
+        "dropoff_location_id_fk", F.col("DOLocationID").cast(LongType())
     ).withColumn(
-        "flag_id_fk", F.when(F.col("Store_and_fwd_flag") == "Y", F.lit(1)).otherwise(F.lit(2)).cast(LongType())
+        "flag_id_fk", F.when(F.col("store_and_fwd_flag") == "Y", F.lit(1)).otherwise(F.lit(2)).cast(LongType())
     ).withColumn(
         "pickup_date_id_fk", F.date_format(F.col("tpep_pickup_datetime"), "yyyyMMdd").cast(LongType())
     ).withColumn(
@@ -157,7 +146,7 @@ def main():
         "dataflow_partition_date", F.col("tpep_pickup_datetime").cast(DateType())
     )
     
-    # Selección final con casts rigurosos según DDL de BigQuery
+    # Proyección final compatible con tu DDL en BigQuery
     df_fact_trips = df_fact_prep.select(
         F.col("trip_id_pk"),
         F.col("vendor_id_fk"),
@@ -181,12 +170,10 @@ def main():
     )
 
     # ============================================================================
-    # 5. ESCRITURA EN BIGQUERY (USANDO EL CONECTOR OFICIAL AVANZADO)
+    # 5. ESCRITURA EN BIGQUERY
     # ============================================================================
-    # Definición de configuraciones de destino
     bq_dataset = f"{args.project_id}.{args.dataset_id}"
     
-    # Diccionario de tablas a guardar (Optimizado para iteración limpia)
     tables_to_write = {
         "Dim_Vendor": df_dim_vendor,
         "Dim_Payment_Type": df_dim_payment,
@@ -201,7 +188,6 @@ def main():
         full_table_path = f"{bq_dataset}.{table_name}"
         print(f"[*] Cargando datos en BigQuery: {full_table_path}...")
         
-        # El conector infiere las particiones automáticamente si la tabla ya está creada
         df_target.write \
             .format("bigquery") \
             .option("table", full_table_path) \
@@ -209,7 +195,7 @@ def main():
             .mode("append") \
             .save()
             
-    print("[+] ETL procesado e insertado exitosamente de punta a punta.")
+    print("[+] ETL procesado e insertado exitosamente con mapeo de zonas TLC moderno.")
     spark.stop()
 
 if __name__ == "__main__":
