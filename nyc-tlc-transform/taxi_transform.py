@@ -11,6 +11,8 @@ def init_spark():
     spark = SparkSession.builder \
         .appName("NYC-TLC-Yellow-Taxi-ETL") \
         .config("spark.sql.session.timeZone", "UTC") \
+        .config("spark.sql.parquet.enableVectorizedReader", "false") \
+        .config("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED") \
         .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
         .config("spark.sql.parquet.enableVectorizedReader", "false") \
         .getOrCreate()
