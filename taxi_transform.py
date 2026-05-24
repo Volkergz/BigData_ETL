@@ -12,6 +12,8 @@ def init_spark():
         .appName("NYC-TLC-Yellow-Taxi-ETL") \
         .config("spark.sql.session.timeZone", "UTC") \
         .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
+        .config("spark.sql.parquet.enableVectorizedReader", "false") \
+        .config("spark.sql.parquet.mergeSchema", "true") \
         .getOrCreate()
     return spark
 
