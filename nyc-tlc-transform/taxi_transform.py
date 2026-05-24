@@ -43,11 +43,11 @@ def main():
     # convierta los Double/Long conflictivos a texto plano sin fallar.
     all_columns = [
         "VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime", 
-        "passenger_count", "trip_distance", "RatecodeID", "RateCodeID",
+        "passenger_count", "trip_distance", "RatecodeID",
         "store_and_fwd_flag", "PULocationID", "DOLocationID", "payment_type", 
         "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount", 
         "improvement_surcharge", "total_amount", "congestion_surcharge", 
-        "airport_fee", "Airport_fee"
+        "airport_fee"
     ]
     
     string_schema = StructType([StructField(c, StringType(), True) for c in all_columns])
@@ -74,7 +74,7 @@ def main():
         .withColumn("improvement_surcharge", F.col("improvement_surcharge").cast(DoubleType())) \
         .withColumn("total_amount", F.col("total_amount").cast(DoubleType())) \
         .withColumn("congestion_surcharge", F.col("congestion_surcharge").cast(DoubleType())) \
-        .withColumn("airport_fee", F.coalesce(F.col("airport_fee"), F.col("Airport_fee")).cast(DoubleType()))
+        .withColumn("airport_fee", F.col("airport_fee").cast(DoubleType()))
 
     # ============================================================================
     # 2. LIMPIEZA Y CALIDAD DE DATOS (DATA CLEANSING)
