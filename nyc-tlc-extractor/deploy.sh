@@ -85,7 +85,11 @@ gcloud functions deploy "${SERVICE_NAME}" \
     --memory=4Gi \
     --service-account="${SA_EMAIL}" \
     --set-env-vars LANDING_BUCKET="${BUCKET_NAME}" \
-    --no-allow-unauthenticated
+    -no-allow-unauthenticated \
+    --cpu=1 \
+    --startup-cpu-boost \
+    --max-instances=5 \
+    --no-cache
 
 # Otorgar permisos de invocación internos
 gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
