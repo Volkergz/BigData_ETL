@@ -4,7 +4,7 @@
 import argparse
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DecimalType, DateType
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DecimalType, DateType, DoubleType, TimestampType
 
 def init_spark():
     """Inicializa la sesión de Spark optimizada para Dataproc Serverless."""
@@ -13,6 +13,7 @@ def init_spark():
         .config("spark.sql.session.timeZone", "UTC") \
         .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
         .config("spark.sql.parquet.enableVectorizedReader", "false") \
+        .config("spark.sql.parquet.mergeSchema", "false") \
         .getOrCreate()
     return spark
 
@@ -35,39 +36,42 @@ def main():
     
     input_path = f"gs://{args.bucket_name}/raw/nyc_tlc/yellow/*.parquet"
     
-    # ============================================================================
-    # 0. LECTURA CON IMPOSICIÓN DE ESQUEMA (SCHEMA ENFORCEMENT)
-    # Evita el colapso de MergeSchema forzando tipos consistentes (Upcasting)
-    # ============================================================================
-    master_schema = """
-        VendorID LONG,
-        tpep_pickup_datetime TIMESTAMP,
-        tpep_dropoff_datetime TIMESTAMP,
-        passenger_count DOUBLE,
-        trip_distance DOUBLE,
-        RatecodeID DOUBLE,
-        store_and_fwd_flag STRING,
-        PULocationID LONG,
-        DOLocationID LONG,
-        payment_type LONG,
-        fare_amount DOUBLE,
-        extra DOUBLE,
-        mta_tax DOUBLE,
-        tip_amount DOUBLE,
-        tolls_amount DOUBLE,
-        improvement_surcharge DOUBLE,
-        total_amount DOUBLE,
-        congestion_surcharge DOUBLE,
-        airport_fee DOUBLE
-    """
+    print(f"[*] Leyendo archivos origen Parquet nativamente desde: {input_path}")
     
-    print(f"[*] Leyendo archivos origen Parquet con Schema Enforcement desde: {input_path}")
-    df_raw = spark.read.schema(master_schema).parquet(input_path)
+    # 1. Leer nativamente sin forzar schema ni merge
+    df_raw = spark.read.parquet(input_path)
     
+    # 2. Imposición de Schema POST-lectura (Casting Seguro)
+    # Manejamos las variaciones de nombres como 'airport_fee' vs 'Airport_fee'
+    airport_fee_col = "Airport_fee" if "Airport_fee" in df_raw.columns else "airport_fee"
+    rate_code_col = "RatecodeID" if "RatecodeID" in df_raw.columns else "RateCodeID"
+
+    df_cast = df_raw.withColumn("VendorID", F.col("VendorID").cast(LongType())) \
+        .withColumn("tpep_pickup_datetime", F.col("tpep_pickup_datetime").cast(TimestampType())) \
+        .withColumn("tpep_dropoff_datetime", F.col("tpep_dropoff_datetime").cast(TimestampType())) \
+        .withColumn("passenger_count", F.col("passenger_count").cast(DoubleType())) \
+        .withColumn("trip_distance", F.col("trip_distance").cast(DoubleType())) \
+        .withColumn("RatecodeID", F.col(rate_code_col).cast(DoubleType())) \
+        .withColumn("store_and_fwd_flag", F.col("store_and_fwd_flag").cast(StringType())) \
+        .withColumn("PULocationID", F.col("PULocationID").cast(LongType())) \
+        .withColumn("DOLocationID", F.col("DOLocationID").cast(LongType())) \
+        .withColumn("payment_type", F.col("payment_type").cast(LongType())) \
+        .withColumn("fare_amount", F.col("fare_amount").cast(DoubleType())) \
+        .withColumn("extra", F.col("extra").cast(DoubleType())) \
+        .withColumn("mta_tax", F.col("mta_tax").cast(DoubleType())) \
+        .withColumn("tip_amount", F.col("tip_amount").cast(DoubleType())) \
+        .withColumn("tolls_amount", F.col("tolls_amount").cast(DoubleType())) \
+        .withColumn("improvement_surcharge", F.col("improvement_surcharge").cast(DoubleType())) \
+        .withColumn("total_amount", F.col("total_amount").cast(DoubleType())) \
+        .withColumn("congestion_surcharge", F.col("congestion_surcharge").cast(DoubleType()))
+        
+    if airport_fee_col in df_raw.columns:
+         df_cast = df_cast.withColumn("airport_fee", F.col(airport_fee_col).cast(DoubleType()))
+
     # ============================================================================
-    # 1. LIMPIEZA Y CALIDAD DE DATOS (DATA CLEANSING)
+    # 3. LIMPIEZA Y CALIDAD DE DATOS (DATA CLEANSING)
     # ============================================================================
-    df_cleaned = df_raw.filter(
+    df_cleaned = df_cast.filter(
         (F.col("tpep_pickup_datetime").isNotNull()) &
         (F.col("tpep_dropoff_datetime").isNotNull()) &
         (F.col("tpep_dropoff_datetime") >= F.col("tpep_pickup_datetime")) &
@@ -76,7 +80,7 @@ def main():
     )
 
     # ============================================================================
-    # 2. DIMENSIONES ESTÁTICAS
+    # 4. DIMENSIONES ESTÁTICAS
     # ============================================================================
     vendor_data = [(1, "Creative Mobile Technologies, LLC"), (2, "VeriFone Inc.")]
     df_dim_vendor = spark.createDataFrame(vendor_data, ["vendor_id_pk", "vendor_name"])
@@ -97,7 +101,7 @@ def main():
     df_dim_flag = spark.createDataFrame(flag_data, ["flag_id_pk", "flag_description"])
 
     # ============================================================================
-    # 3. DIMENSIONES DINÁMICAS
+    # 5. DIMENSIONES DINÁMICAS
     # ============================================================================
     df_puzones = df_cleaned.select(F.col("PULocationID").alias("zone_id")).distinct()
     df_dozones = df_cleaned.select(F.col("DOLocationID").alias("zone_id")).distinct()
@@ -136,7 +140,7 @@ def main():
     ).distinct()
 
     # ============================================================================
-    # 4. TABLA DE HECHOS
+    # 6. TABLA DE HECHOS
     # ============================================================================
     df_fact_prep = df_cleaned.withColumn(
         "trip_id_pk", generate_surrogate_key_hash(["VendorID", "tpep_pickup_datetime", "PULocationID", "DOLocationID"])
@@ -183,7 +187,7 @@ def main():
     )
 
     # ============================================================================
-    # 5. ESCRITURA EN BIGQUERY
+    # 7. ESCRITURA EN BIGQUERY
     # ============================================================================
     bq_dataset = f"{args.project_id}.{args.dataset_id}"
     

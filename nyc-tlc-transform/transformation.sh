@@ -54,7 +54,7 @@ gcloud dataproc batches submit pyspark "gs://$BUCKET_NAME/scripts/$PYSPARK_FILE"
     --batch="$JOB_NAME" \
     --region="$REGION" \
     --deps-bucket="gs://$BUCKET_NAME" \
-    --jars="spark-3.5-bigquery-0.44.1.jar" \
+    --jars="nyc-tlc-transform/spark-3.5-bigquery-0.44.1.jar" \
     --subnet="default" \
     -- \
     --project_id="$PROJECT_ID" \
