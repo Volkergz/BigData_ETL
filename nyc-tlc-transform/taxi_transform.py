@@ -38,14 +38,37 @@ def main():
     print(f"[*] Leyendo archivos origen Parquet desde: {input_path}")
     
     # ============================================================================
-    # 1. EXTRACCIÓN SEGURO SIN FUSIÓN (Evita CANNOT_MERGE_SCHEMAS)
+    # 1. ESQUEMA EXPLICÍTO DE LECTURA (Cura definitiva para el ClassCastException)
     # ============================================================================
-    # Quitamos mergeSchema porque los metadatos de los archivos chocan entre INT y BIGINT.
-    # Dejamos que Spark lea el esquema base del primer archivo de forma nativa.
-    df_raw = spark.read.parquet(input_path)
+    # Definimos las columnas problemáticas como DoubleType() directamente en la lectura.
+    # Esto le dice a la JVM que reserve espacio para decimales, tolerando enteros y flotantes por igual.
+    custom_schema = StructType([
+        StructField("VendorID", LongType(), True),
+        StructField("tpep_pickup_datetime", TimestampType(), True),
+        StructField("tpep_dropoff_datetime", TimestampType(), True),
+        StructField("passenger_count", DoubleType(), True),
+        StructField("trip_distance", DoubleType(), True),
+        StructField("RatecodeID", DoubleType(), True),  # <-- Forzado a Double para tolerar mutaciones
+        StructField("store_and_fwd_flag", StringType(), True),
+        StructField("PULocationID", LongType(), True),
+        StructField("DOLocationID", LongType(), True),
+        StructField("payment_type", DoubleType(), True), # <-- Forzado a Double por seguridad
+        StructField("fare_amount", DoubleType(), True),
+        StructField("extra", DoubleType(), True),
+        StructField("mta_tax", DoubleType(), True),
+        StructField("tip_amount", DoubleType(), True),
+        StructField("tolls_amount", DoubleType(), True),
+        StructField("improvement_surcharge", DoubleType(), True),
+        StructField("total_amount", DoubleType(), True),
+        StructField("congestion_surcharge", DoubleType(), True),
+        StructField("Airport_fee", DoubleType(), True)    # Mapeado temporal con 'A' mayúscula
+    ])
+
+    # Forzamos la lectura usando el esquema tolerante
+    df_raw = spark.read.schema(custom_schema).parquet(input_path)
 
     # ============================================================================
-    # 2. POST-LECTURA: Normalización, Case-Insensitive y Manejo de Tipos Variables
+    # 2. NORMALIZACIÓN DE COLUMNAS (Case-Insensitive)
     # ============================================================================
     expected_cols = [
         "vendorid", "tpep_pickup_datetime", "tpep_dropoff_datetime", 
@@ -55,10 +78,8 @@ def main():
         "improvement_surcharge", "total_amount", "congestion_surcharge", "airport_fee"
     ]
     
-    # Mapeamos todas las columnas reales a minúsculas para solucionar "Airport_fee" vs "airport_fee"
     current_cols_mapped = {c.lower(): c for c in df_raw.columns}
     
-    # Seleccionamos y renombramos de forma segura protegiendo contra variaciones de mayúsculas
     df_normalized = df_raw.select([
         F.col(current_cols_mapped[c.lower()]).alias(c.lower()) if c.lower() in current_cols_mapped
         else F.lit(None).alias(c.lower()) 
@@ -66,21 +87,20 @@ def main():
     ])
 
     # ============================================================================
-    # 3. PARSEO SEGURO CON COMPATIBILIDAD INTEGRAL (Cast preventivo de INT/BIGINT/DOUBLE)
+    # 3. PARSEO SEGURO FINAL
     # ============================================================================
-    # Convertimos primero a String o Double temporalmente las columnas que chocan 
-    # para romper la herencia rígida del formato binario de origen, luego consolidamos al tipo definitivo.
+    # Ahora que los datos están seguros en memoria, los normalizamos a sus tipos finales de negocio
     df_cast = df_normalized \
-        .withColumn("vendorid", F.col("vendorid").cast(StringType()).cast(LongType())) \
+        .withColumn("vendorid", F.col("vendorid").cast(LongType())) \
         .withColumn("tpep_pickup_datetime", F.col("tpep_pickup_datetime").cast(TimestampType())) \
         .withColumn("tpep_dropoff_datetime", F.col("tpep_dropoff_datetime").cast(TimestampType())) \
         .withColumn("passenger_count", F.col("passenger_count").cast(DoubleType())) \
         .withColumn("trip_distance", F.col("trip_distance").cast(DoubleType())) \
-        .withColumn("ratecodeid", F.col("ratecodeid").cast(StringType()).cast(LongType())) \
+        .withColumn("ratecodeid", F.col("ratecodeid").cast(LongType())) \
         .withColumn("store_and_fwd_flag", F.col("store_and_fwd_flag").cast(StringType())) \
-        .withColumn("pulocationid", F.col("pulocationid").cast(StringType()).cast(LongType())) \
-        .withColumn("dolocationid", F.col("dolocationid").cast(StringType()).cast(LongType())) \
-        .withColumn("payment_type", F.col("payment_type").cast(StringType()).cast(LongType())) \
+        .withColumn("pulocationid", F.col("pulocationid").cast(LongType())) \
+        .withColumn("dolocationid", F.col("dolocationid").cast(LongType())) \
+        .withColumn("payment_type", F.col("payment_type").cast(LongType())) \
         .withColumn("fare_amount", F.col("fare_amount").cast(DoubleType())) \
         .withColumn("extra", F.col("extra").cast(DoubleType())) \
         .withColumn("mta_tax", F.col("mta_tax").cast(DoubleType())) \
