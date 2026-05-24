@@ -12,6 +12,7 @@ def init_spark():
         .appName("NYC-TLC-Yellow-Taxi-ETL") \
         .config("spark.sql.session.timeZone", "UTC") \
         .config("spark.sql.parquet.enableVectorizedReader", "false") \
+        .config("spark.sql.caseSensitive", "false") \
         .config("spark.sql.parquet.datetimeRebaseModeInRead", "CORRECTED") \
         .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
         .getOrCreate()
@@ -38,21 +39,21 @@ def main():
     print(f"[*] Leyendo archivos origen Parquet desde: {input_path}")
     
     # ============================================================================
-    # 1. ESQUEMA EXPLICÍTO DE LECTURA (Cura definitiva para el ClassCastException)
+    # 1. ESQUEMA DE LECTURA ULTRA-TOLERANTE (Paso de la muerte para ClassCastException)
     # ============================================================================
-    # Definimos las columnas problemáticas como DoubleType() directamente en la lectura.
-    # Esto le dice a la JVM que reserve espacio para decimales, tolerando enteros y flotantes por igual.
+    # Seteamos todas las columnas de IDs mutables a DoubleType de forma temporal.
+    # Esto evita que la JVM choque al abrir los archivos de 2025.
     custom_schema = StructType([
-        StructField("VendorID", LongType(), True),
+        StructField("VendorID", DoubleType(), True),           # <-- Cambiado a Double
         StructField("tpep_pickup_datetime", TimestampType(), True),
         StructField("tpep_dropoff_datetime", TimestampType(), True),
         StructField("passenger_count", DoubleType(), True),
         StructField("trip_distance", DoubleType(), True),
-        StructField("RatecodeID", DoubleType(), True),  # <-- Forzado a Double para tolerar mutaciones
+        StructField("RatecodeID", DoubleType(), True),          # <-- Mantener en Double
         StructField("store_and_fwd_flag", StringType(), True),
-        StructField("PULocationID", LongType(), True),
-        StructField("DOLocationID", LongType(), True),
-        StructField("payment_type", DoubleType(), True), # <-- Forzado a Double por seguridad
+        StructField("PULocationID", DoubleType(), True),        # <-- Cambiado a Double
+        StructField("DOLocationID", DoubleType(), True),        # <-- Cambiado a Double
+        StructField("payment_type", DoubleType(), True),        # <-- Mantener en Double
         StructField("fare_amount", DoubleType(), True),
         StructField("extra", DoubleType(), True),
         StructField("mta_tax", DoubleType(), True),
@@ -61,10 +62,10 @@ def main():
         StructField("improvement_surcharge", DoubleType(), True),
         StructField("total_amount", DoubleType(), True),
         StructField("congestion_surcharge", DoubleType(), True),
-        StructField("Airport_fee", DoubleType(), True)    # Mapeado temporal con 'A' mayúscula
+        StructField("Airport_fee", DoubleType(), True)          # <-- Asegurar con 'A' mayúscula
     ])
 
-    # Forzamos la lectura usando el esquema tolerante
+    # Forzamos la lectura con el esquema elástico
     df_raw = spark.read.schema(custom_schema).parquet(input_path)
 
     # ============================================================================
@@ -87,9 +88,9 @@ def main():
     ])
 
     # ============================================================================
-    # 3. PARSEO SEGURO FINAL
+    # 3. PARSEO FINAL CONTROLADO EN MEMORIA (Seguro para el conteo e inserción)
     # ============================================================================
-    # Ahora que los datos están seguros en memoria, los normalizamos a sus tipos finales de negocio
+    # Aquí transformamos los Doubles limpios de Spark a los enteros requeridos.
     df_cast = df_normalized \
         .withColumn("vendorid", F.col("vendorid").cast(LongType())) \
         .withColumn("tpep_pickup_datetime", F.col("tpep_pickup_datetime").cast(TimestampType())) \
