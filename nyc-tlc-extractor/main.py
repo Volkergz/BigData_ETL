@@ -4,10 +4,10 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import requests
 import backoff
-import pandas as pd
 import functions_framework
 from google.cloud import storage
 
+# Configuración de Logging de producción
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,7 @@ START_DATE = datetime(2023, 1, 1)
 
 
 def get_existing_blobs(prefix: str) -> set:
+    """Retorna un conjunto con los nombres de archivos ya existentes en el bucket."""
     try:
         storage_client = storage.Client()
         blobs = storage_client.list_blobs(BUCKET_NAME, prefix=prefix)
@@ -27,6 +28,7 @@ def get_existing_blobs(prefix: str) -> set:
 
 
 def generate_date_range():
+    """Generador que produce tuplas (año, mes) desde START_DATE hasta el mes actual."""
     current = START_DATE
     end = datetime.now()
     while current <= end:
@@ -40,78 +42,55 @@ def generate_date_range():
     max_tries=5,
     giveup=lambda e: e.response is not None and e.response.status_code == 404
 )
-def download_and_convert(url: str, parquet_filename: str, csv_blob_path: str) -> bool:
-    """Descarga Parquet, convierte a CSV en memoria efímera y sube a GCS."""
+def download_file(url: str, blob_name: str) -> bool:
+    """Descarga un archivo vía streaming y lo escribe directamente en GCS."""
     client = storage.Client()
     bucket = client.bucket(BUCKET_NAME)
-    
-    tmp_parquet_path = f"/tmp/{parquet_filename}"
-    tmp_csv_path = f"/tmp/{parquet_filename.replace('.parquet', '.csv')}"
+    blob = bucket.blob(blob_name)
     
     logger.info(f"Iniciando descarga desde: {url}")
     
-    try:
-        # 1. Descargar Parquet a disco en memoria (/tmp)
-        with requests.get(url, stream=True, timeout=(10, 60)) as r:
-            if r.status_code == 404:
-                logger.warning(f"Archivo no encontrado en origen (404): {url}")
-                return False
-            r.raise_for_status()
-            with open(tmp_parquet_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                    
-        # 2. Conversión a CSV
-        logger.info(f"Convirtiendo {parquet_filename} a CSV...")
-        df = pd.read_parquet(tmp_parquet_path)
-        df.to_csv(tmp_csv_path, index=False)
+    # Timeout estricto de conexión (10s) y lectura (60s)
+    with requests.get(url, stream=True, timeout=(10, 60)) as r:
+        if r.status_code == 404:
+            logger.warning(f"Archivo no encontrado en origen (404): {url}")
+            return False
+        r.raise_for_status()
         
-        # 3. Subir CSV a Google Cloud Storage
-        blob = bucket.blob(csv_blob_path)
-        blob.upload_from_filename(tmp_csv_path, content_type='text/csv')
-        logger.info(f"Sincronizado exitosamente: gs://{BUCKET_NAME}/{csv_blob_path}")
-        
-        return True
-        
-    finally:
-        # 4. Limpieza OBLIGATORIA de RAM
-        if os.path.exists(tmp_parquet_path): os.remove(tmp_parquet_path)
-        if os.path.exists(tmp_csv_path): os.remove(tmp_csv_path)
+        # Upload directo utilizando el stream crudo de requests
+        blob.upload_from_file(r.raw, content_type='application/octet-stream')
+    logger.info(f"Sincronizado exitosamente en GCS: gs://{BUCKET_NAME}/{blob_name}")
+    return True
 
 
 @functions_framework.http
 def sync_nyc_data(request):
-    """Punto de entrada HTTP. Almacenamiento aplanado en raw/."""
+    """Punto de entrada HTTP para Cloud Functions / Cloud Run Gen 2."""
     data = request.get_json(silent=True) or {}
     v_type = data.get('type', 'yellow')
     
-    # Cambio solicitado: prefijo aplanado
-    prefix = "raw/"
+    prefix = f"raw/nyc_tlc/{v_type}/"
     
     try:
         existing_files = get_existing_blobs(prefix)
     except Exception:
-        return {"status": "error", "message": "Failed to access storage"}, 500
+        return {"status": "error", "message": "Failed to access storage zone"}, 500
         
     downloaded_count = 0
     
     for year, month in generate_date_range():
-        # Mantenemos el nombre de archivo original para identificar el tipo
-        csv_filename = f"{v_type}_tripdata_{year}-{month}.csv"
-        csv_blob_path = f"{prefix}{csv_filename}"
+        file_name = f"{v_type}_tripdata_{year}-{month}.parquet"
+        blob_path = f"{prefix}{file_name}"
         
-        if csv_filename in existing_files:
+        if file_name in existing_files:
             continue
             
-        # Generar nombre del parquet original para descargar
-        parquet_filename = f"{v_type}_tripdata_{year}-{month}.parquet"
-        target_url = f"{BASE_URL}/{parquet_filename}"
-        
-        if download_and_convert(target_url, parquet_filename, csv_blob_path):
+        target_url = f"{BASE_URL}/{file_name}"
+        if download_file(target_url, blob_path):
             downloaded_count += 1
             
     return {
         "status": "completed", 
-        "target_directory": prefix,
-        "new_csv_files_ingested": downloaded_count
+        "vehicle_type": v_type, 
+        "new_files_ingested": downloaded_count
     }, 200
