@@ -70,9 +70,9 @@ def main():
     ]
     df_dim_rate = spark.createDataFrame(rate_data, ["rate_code_id_pk", "rate_code_description"])
     
-    # Dim_Store_and_fwd_flag
-    flag_data = [(1, "Y", "store and forward trip"), (2, "N", "not a store and forward trip")]
-    df_dim_flag = spark.createDataFrame(flag_data, ["flag_id_pk", "flag_code", "flag_desc"])
+    # Dim_Store_and_fwd_flag (Alineado con el DDL exacto de BigQuery)
+    flag_data = [(1, "store and forward trip"), (2, "not a store and forward trip")]
+    df_dim_flag = spark.createDataFrame(flag_data, ["flag_id_pk", "flag_description"])
 
     # ============================================================================
     # 3. DIMENSIONES DINÁMICAS (ALTA CARDINALIDAD Y TIEMPO)
