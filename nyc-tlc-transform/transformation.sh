@@ -29,6 +29,11 @@ fi
 gcloud config set compute/region $REGION
 echo " - Región identificada y configurada: $REGION"
 
+# 5. Habilitar Private Google Access en la subred default para permitir que Dataproc acceda a BigQuery sin IP pública
+gcloud compute networks subnets update default \
+    --region=$REGION \
+    --enable-private-ip-google-access
+
 # 2. Configuración de Variables
 echo "=== [2/4] Configurando variables de entorno..."
 
@@ -37,10 +42,6 @@ export BUCKET_NAME="ingesta-nyc-tlc-${PROJECT_ID}"
 export DATASET_ID="nyc_analytics"
 export PYSPARK_FILE="nyc-tlc-transform/taxi_transform.py"
 export JOB_NAME="taxi-etl-job-$(date +%s)"
-
-gcloud compute networks subnets update default \
-    --region=$REGION \
-    --enable-private-ip-google-access
 
 # 3. Preparación del Codigo
 echo "=== [3/4] Subiendo script PySpark a Cloud Storage... "
