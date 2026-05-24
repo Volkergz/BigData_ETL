@@ -13,7 +13,6 @@ def init_spark():
         .config("spark.sql.session.timeZone", "UTC") \
         .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
         .config("spark.sql.parquet.enableVectorizedReader", "false") \
-        .config("spark.sql.parquet.mergeSchema", "true") \
         .getOrCreate()
     return spark
 
@@ -34,11 +33,36 @@ def main():
     args = parse_arguments()
     spark = init_spark()
     
-    # Ruta de los archivos detectada en tu log de Cloud Shell
     input_path = f"gs://{args.bucket_name}/raw/nyc_tlc/yellow/*.parquet"
     
-    print(f"[*] Leyendo archivos origen Parquet desde: {input_path}")
-    df_raw = spark.read.parquet(input_path)
+    # ============================================================================
+    # 0. LECTURA CON IMPOSICIÓN DE ESQUEMA (SCHEMA ENFORCEMENT)
+    # Evita el colapso de MergeSchema forzando tipos consistentes (Upcasting)
+    # ============================================================================
+    master_schema = """
+        VendorID LONG,
+        tpep_pickup_datetime TIMESTAMP,
+        tpep_dropoff_datetime TIMESTAMP,
+        passenger_count DOUBLE,
+        trip_distance DOUBLE,
+        RatecodeID DOUBLE,
+        store_and_fwd_flag STRING,
+        PULocationID LONG,
+        DOLocationID LONG,
+        payment_type LONG,
+        fare_amount DOUBLE,
+        extra DOUBLE,
+        mta_tax DOUBLE,
+        tip_amount DOUBLE,
+        tolls_amount DOUBLE,
+        improvement_surcharge DOUBLE,
+        total_amount DOUBLE,
+        congestion_surcharge DOUBLE,
+        airport_fee DOUBLE
+    """
+    
+    print(f"[*] Leyendo archivos origen Parquet con Schema Enforcement desde: {input_path}")
+    df_raw = spark.read.schema(master_schema).parquet(input_path)
     
     # ============================================================================
     # 1. LIMPIEZA Y CALIDAD DE DATOS (DATA CLEANSING)
@@ -52,42 +76,33 @@ def main():
     )
 
     # ============================================================================
-    # 2. DIMENSIONES ESTÁTICAS (Mapeos fijos según Diccionario)
+    # 2. DIMENSIONES ESTÁTICAS
     # ============================================================================
-    # Dim_Vendor
     vendor_data = [(1, "Creative Mobile Technologies, LLC"), (2, "VeriFone Inc.")]
     df_dim_vendor = spark.createDataFrame(vendor_data, ["vendor_id_pk", "vendor_name"])
     
-    # Dim_Payment_Type
     payment_data = [
         (1, "Credit card"), (2, "Cash"), (3, "No charge"), 
         (4, "Dispute"), (5, "Unknown"), (6, "Voided trip")
     ]
     df_dim_payment = spark.createDataFrame(payment_data, ["payment_type_id_pk", "payment_description"])
     
-    # Dim_Rate_Code
     rate_data = [
         (1, "Standard rate"), (2, "JFK"), (3, "Newark"), 
         (4, "Nassau or Westchester"), (5, "Negotiated fare"), (6, "Group ride")
     ]
     df_dim_rate = spark.createDataFrame(rate_data, ["rate_code_id_pk", "rate_code_description"])
     
-    # Dim_Store_and_fwd_flag (Alineado con el DDL exacto de BigQuery)
     flag_data = [(1, "store and forward trip"), (2, "not a store and forward trip")]
     df_dim_flag = spark.createDataFrame(flag_data, ["flag_id_pk", "flag_description"])
 
     # ============================================================================
-    # 3. DIMENSIONES DINÁMICAS (ALTA CARDINALIDAD Y TIEMPO)
+    # 3. DIMENSIONES DINÁMICAS
     # ============================================================================
-    
-    # --- DIM_LOCATION (Adaptada al nuevo formato de zonas TLC PULocationID / DOLocationID) ---
     df_puzones = df_cleaned.select(F.col("PULocationID").alias("zone_id")).distinct()
     df_dozones = df_cleaned.select(F.col("DOLocationID").alias("zone_id")).distinct()
-    
     df_dim_location_raw = df_puzones.union(df_dozones).distinct().filter(F.col("zone_id").isNotNull())
     
-    # Mapeamos el ID de la zona directamente como llave primaria (location_id_pk)
-    # Dejamos las coordenadas en NULL ya que el dataset moderno no las provee y seteamos la relación FK a zona
     df_dim_location = df_dim_location_raw.withColumn(
         "location_id_pk", F.col("zone_id").cast(LongType())
     ).withColumn(
@@ -98,7 +113,6 @@ def main():
         "zone_id_fk", F.col("zone_id").cast(LongType())
     ).select("location_id_pk", "latitude", "longitude", "zone_id_fk")
 
-    # --- DIM_TIME ---
     df_times_raw = df_cleaned.select(F.col("tpep_pickup_datetime").alias("ts")).union(
         df_cleaned.select(F.col("tpep_dropoff_datetime").alias("ts"))
     ).distinct()
@@ -122,10 +136,8 @@ def main():
     ).distinct()
 
     # ============================================================================
-    # 4. TABLA DE HECHOS (FACT_TRIPS)
+    # 4. TABLA DE HECHOS
     # ============================================================================
-    
-    # Construcción aplicando nombres exactos del Parquet (ej: 'RatecodeID' y 'payment_type')
     df_fact_prep = df_cleaned.withColumn(
         "trip_id_pk", generate_surrogate_key_hash(["VendorID", "tpep_pickup_datetime", "PULocationID", "DOLocationID"])
     ).withColumn(
@@ -148,7 +160,6 @@ def main():
         "dataflow_partition_date", F.col("tpep_pickup_datetime").cast(DateType())
     )
     
-    # Proyección final compatible con tu DDL en BigQuery
     df_fact_trips = df_fact_prep.select(
         F.col("trip_id_pk"),
         F.col("vendor_id_fk"),
@@ -171,7 +182,7 @@ def main():
         F.col("dataflow_partition_date")
     )
 
-# ============================================================================
+    # ============================================================================
     # 5. ESCRITURA EN BIGQUERY
     # ============================================================================
     bq_dataset = f"{args.project_id}.{args.dataset_id}"
@@ -181,8 +192,8 @@ def main():
         "Dim_Payment_Type": (df_dim_payment, "overwrite"),
         "Dim_Rate_Code": (df_dim_rate, "overwrite"),
         "Dim_Store_and_fwd_flag": (df_dim_flag, "overwrite"),
-        "Dim_Location": (df_dim_location, "append"),
-        "Dim_Time": (df_dim_time, "append"),
+        "Dim_Location": (df_dim_location, "overwrite"),
+        "Dim_Time": (df_dim_time, "overwrite"),
         "Fact_Trips": (df_fact_trips, "append")
     }
     
@@ -197,7 +208,7 @@ def main():
             .mode(write_mode) \
             .save()
             
-    print("[+] ETL procesado e insertado exitosamente con alineación estricta de esquema.")
+    print("[+] ETL procesado e insertado exitosamente de punta a punta.")
     spark.stop()
 
 if __name__ == "__main__":

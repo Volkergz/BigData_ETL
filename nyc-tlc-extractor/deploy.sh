@@ -78,7 +78,7 @@ gcloud functions deploy "${SERVICE_NAME}" \
     --gen2 \
     --runtime=python311 \
     --region="${REGION}" \
-    --source=. \
+    --source=./nyc-tlc-extractor \
     --entry-point=sync_nyc_data \
     --trigger-http \
     --timeout=3600 \
