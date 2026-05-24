@@ -8,10 +8,16 @@
 git clone https://github.com/Volkergz/BigData_ETL.git
 ```
 
-2. Otorgamos permiso de ejecusión a los archivos
+2. Cambiamos al directorio del proyecto
 
 ```
-chmod +x extraction.sh loading.sh transformation.sh
+cd ./BigData_ETL
+```
+
+3. Otorgamos permiso de ejecusión a los archivos
+
+```
+chmod +x ./*/*.sh
 ```
 
 ## Parte 1 - Extracción
@@ -19,7 +25,7 @@ chmod +x extraction.sh loading.sh transformation.sh
 1. Ejecutamos el script que ejecuta la extración
 
 ```
-./extraction.sh
+.nyc-tlc-extractor/deploy.sh
 ```
 
 > Antes de continuar, espera que el script termine su ejecución
@@ -39,25 +45,25 @@ gcloud scheduler jobs run nyc-tlc-monthly-sync --location={Añade aqui la regió
 1. Ejecutamos el script que ejecuta configuración del ambiente
 
 ```
-./loading.sh
+./nyc-tlc-loader/loading.sh
 ```
 
 > Antes de continuar, espera que el script termine su ejecución
 
 ## Parte 3 - Transformación
 
-1. Habilitamos
+1. Habilitamos el permiso de ejecutar los servicios en redes privadas
 
 ```
 gcloud compute networks subnets update default \
-  --region=us-central1 \
+  --region={Añade aqui la región} \
   --enable-private-ip-google-access
 ```
 
 2. Ejecutamos el script que inicializa el proceso de transformación  en dataproc
 
 ```
-./transformation.sh
+./nyc-tlc-tranform/transformation.sh
 ```
 
 > Ahora solo esperamos que los datos sean procesados, este proceso puede tardar mucho tiempo.
