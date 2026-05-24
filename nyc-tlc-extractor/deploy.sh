@@ -85,7 +85,7 @@ gcloud functions deploy "${SERVICE_NAME}" \
     --memory=4Gi \
     --service-account="${SA_EMAIL}" \
     --set-env-vars LANDING_BUCKET="${BUCKET_NAME}" \
-    -no-allow-unauthenticated \
+    --no-allow-unauthenticated \
     --cpu=1 \
     --startup-cpu-boost \
     --max-instances=5 \
