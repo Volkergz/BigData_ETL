@@ -169,33 +169,33 @@ def main():
         F.col("dataflow_partition_date")
     )
 
-    # ============================================================================
+# ============================================================================
     # 5. ESCRITURA EN BIGQUERY
     # ============================================================================
     bq_dataset = f"{args.project_id}.{args.dataset_id}"
     
     tables_to_write = {
-        "Dim_Vendor": df_dim_vendor,
-        "Dim_Payment_Type": df_dim_payment,
-        "Dim_Rate_Code": df_dim_rate,
-        "Dim_Store_and_fwd_flag": df_dim_flag,
-        "Dim_Location": df_dim_location,
-        "Dim_Time": df_dim_time,
-        "Fact_Trips": df_fact_trips
+        "Dim_Vendor": (df_dim_vendor, "overwrite"),
+        "Dim_Payment_Type": (df_dim_payment, "overwrite"),
+        "Dim_Rate_Code": (df_dim_rate, "overwrite"),
+        "Dim_Store_and_fwd_flag": (df_dim_flag, "overwrite"),
+        "Dim_Location": (df_dim_location, "append"),
+        "Dim_Time": (df_dim_time, "append"),
+        "Fact_Trips": (df_fact_trips, "append")
     }
     
-    for table_name, df_target in tables_to_write.items():
+    for table_name, (df_target, write_mode) in tables_to_write.items():
         full_table_path = f"{bq_dataset}.{table_name}"
-        print(f"[*] Cargando datos en BigQuery: {full_table_path}...")
+        print(f"[*] Cargando datos en BigQuery ({write_mode}): {full_table_path}...")
         
         df_target.write \
             .format("bigquery") \
             .option("table", full_table_path) \
             .option("temporaryGcsBucket", args.bucket_name) \
-            .mode("append") \
+            .mode(write_mode) \
             .save()
             
-    print("[+] ETL procesado e insertado exitosamente con mapeo de zonas TLC moderno.")
+    print("[+] ETL procesado e insertado exitosamente con alineación estricta de esquema.")
     spark.stop()
 
 if __name__ == "__main__":
