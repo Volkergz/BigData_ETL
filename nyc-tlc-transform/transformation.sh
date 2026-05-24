@@ -35,7 +35,7 @@ echo "=== [2/4] Configurando variables de entorno..."
 export PROJECT_ID=$(gcloud config get-value project)
 export BUCKET_NAME="ingesta-nyc-tlc-${PROJECT_ID}"
 export DATASET_ID="nyc_analytics"
-export PYSPARK_FILE="taxi_transform.py"
+export PYSPARK_FILE="nyc-tlc-transform/taxi_transform.py"
 export JOB_NAME="taxi-etl-job-$(date +%s)"
 
 gcloud compute networks subnets update default \

@@ -7,7 +7,7 @@ echo "=== [1/4] CONFIGURANDO VARIABLES DE ENTORNO ==="
 export PROJECT_ID=$(gcloud config get-value project)
 export DATASET_NAME="nyc_analytics"
 export LOCATION="US"
-export SQL_FILE="taxis_dimensional.sql"
+export SQL_FILE="nyc-tlc-loader/taxis_dimensional.sql"
 
 echo "Proyecto Actual: ${PROJECT_ID}"
 
