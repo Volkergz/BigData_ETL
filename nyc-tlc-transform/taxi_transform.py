@@ -38,9 +38,11 @@ def main():
     print(f"[*] Leyendo archivos origen Parquet desde: {input_path}")
     
     # ============================================================================
-    # 1. EXTRACCIÓN CON INFERENCIA (Evita errores de Diccionarios Parquet)
+    # 1. EXTRACCIÓN CON FUSIÓN DE ESQUEMAS (Previene ClassCastException Double/Long)
     # ============================================================================
-    df_raw = spark.read.parquet(input_path)
+    # Con mergeSchema=true, si un archivo tiene Long y otro tiene Double, 
+    # Spark resolverá el conflicto automáticamente promoviendo la columna a Double.
+    df_raw = spark.read.option("mergeSchema", "true").parquet(input_path)
 
     # ============================================================================
     # 2. POST-LECTURA: Normalización y Tolerancia a Esquemas Variables
@@ -70,11 +72,11 @@ def main():
         .withColumn("tpep_dropoff_datetime", F.col("tpep_dropoff_datetime").cast(TimestampType())) \
         .withColumn("passenger_count", F.col("passenger_count").cast(DoubleType())) \
         .withColumn("trip_distance", F.col("trip_distance").cast(DoubleType())) \
-        .withColumn("ratecodeid", F.col("ratecodeid").cast(DoubleType())) \
+        .withColumn("ratecodeid", F.col("ratecodeid").cast(DoubleType()).cast(LongType())) \
         .withColumn("store_and_fwd_flag", F.col("store_and_fwd_flag").cast(StringType())) \
-        .withColumn("pulocationid", F.col("pulocationid").cast(LongType())) \
-        .withColumn("dolocationid", F.col("dolocationid").cast(LongType())) \
-        .withColumn("payment_type", F.col("payment_type").cast(LongType())) \
+        .withColumn("pulocationid", F.col("pulocationid").cast(DoubleType()).cast(LongType())) \
+        .withColumn("dolocationid", F.col("dolocationid").cast(DoubleType()).cast(LongType())) \
+        .withColumn("payment_type", F.col("payment_type").cast(DoubleType()).cast(LongType())) \
         .withColumn("fare_amount", F.col("fare_amount").cast(DoubleType())) \
         .withColumn("extra", F.col("extra").cast(DoubleType())) \
         .withColumn("mta_tax", F.col("mta_tax").cast(DoubleType())) \
