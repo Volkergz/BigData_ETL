@@ -38,14 +38,14 @@ def main():
     print(f"[*] Leyendo archivos origen Parquet desde: {input_path}")
     
     # ============================================================================
-    # 1. EXTRACCIÓN CON FUSIÓN DE ESQUEMAS (Previene ClassCastException Double/Long)
+    # 1. EXTRACCIÓN SEGURO SIN FUSIÓN (Evita CANNOT_MERGE_SCHEMAS)
     # ============================================================================
-    # Con mergeSchema=true, si un archivo tiene Long y otro tiene Double, 
-    # Spark resolverá el conflicto automáticamente promoviendo la columna a Double.
-    df_raw = spark.read.option("mergeSchema", "true").parquet(input_path)
+    # Quitamos mergeSchema porque los metadatos de los archivos chocan entre INT y BIGINT.
+    # Dejamos que Spark lea el esquema base del primer archivo de forma nativa.
+    df_raw = spark.read.parquet(input_path)
 
     # ============================================================================
-    # 2. POST-LECTURA: Normalización y Tolerancia a Esquemas Variables
+    # 2. POST-LECTURA: Normalización, Case-Insensitive y Manejo de Tipos Variables
     # ============================================================================
     expected_cols = [
         "vendorid", "tpep_pickup_datetime", "tpep_dropoff_datetime", 
@@ -55,28 +55,32 @@ def main():
         "improvement_surcharge", "total_amount", "congestion_surcharge", "airport_fee"
     ]
     
-    current_cols = [c.lower() for c in df_raw.columns]
+    # Mapeamos todas las columnas reales a minúsculas para solucionar "Airport_fee" vs "airport_fee"
+    current_cols_mapped = {c.lower(): c for c in df_raw.columns}
     
-    # Selecciona las columnas existentes mapeadas a minúsculas, o las crea nulas si faltan
+    # Seleccionamos y renombramos de forma segura protegiendo contra variaciones de mayúsculas
     df_normalized = df_raw.select([
-        F.col(c).alias(c.lower()) if c.lower() in current_cols 
+        F.col(current_cols_mapped[c.lower()]).alias(c.lower()) if c.lower() in current_cols_mapped
         else F.lit(None).alias(c.lower()) 
         for c in expected_cols
     ])
 
     # ============================================================================
-    # 3. PARSEO SEGURO Y CONSOLIDACIÓN DE TIPOS
+    # 3. PARSEO SEGURO CON COMPATIBILIDAD INTEGRAL (Cast preventivo de INT/BIGINT/DOUBLE)
     # ============================================================================
-    df_cast = df_normalized.withColumn("vendorid", F.col("vendorid").cast(LongType())) \
+    # Convertimos primero a String o Double temporalmente las columnas que chocan 
+    # para romper la herencia rígida del formato binario de origen, luego consolidamos al tipo definitivo.
+    df_cast = df_normalized \
+        .withColumn("vendorid", F.col("vendorid").cast(StringType()).cast(LongType())) \
         .withColumn("tpep_pickup_datetime", F.col("tpep_pickup_datetime").cast(TimestampType())) \
         .withColumn("tpep_dropoff_datetime", F.col("tpep_dropoff_datetime").cast(TimestampType())) \
         .withColumn("passenger_count", F.col("passenger_count").cast(DoubleType())) \
         .withColumn("trip_distance", F.col("trip_distance").cast(DoubleType())) \
-        .withColumn("ratecodeid", F.col("ratecodeid").cast(DoubleType()).cast(LongType())) \
+        .withColumn("ratecodeid", F.col("ratecodeid").cast(StringType()).cast(LongType())) \
         .withColumn("store_and_fwd_flag", F.col("store_and_fwd_flag").cast(StringType())) \
-        .withColumn("pulocationid", F.col("pulocationid").cast(DoubleType()).cast(LongType())) \
-        .withColumn("dolocationid", F.col("dolocationid").cast(DoubleType()).cast(LongType())) \
-        .withColumn("payment_type", F.col("payment_type").cast(DoubleType()).cast(LongType())) \
+        .withColumn("pulocationid", F.col("pulocationid").cast(StringType()).cast(LongType())) \
+        .withColumn("dolocationid", F.col("dolocationid").cast(StringType()).cast(LongType())) \
+        .withColumn("payment_type", F.col("payment_type").cast(StringType()).cast(LongType())) \
         .withColumn("fare_amount", F.col("fare_amount").cast(DoubleType())) \
         .withColumn("extra", F.col("extra").cast(DoubleType())) \
         .withColumn("mta_tax", F.col("mta_tax").cast(DoubleType())) \
