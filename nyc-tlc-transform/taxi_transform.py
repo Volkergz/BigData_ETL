@@ -13,7 +13,6 @@ def init_spark():
         .config("spark.sql.session.timeZone", "UTC") \
         .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED") \
         .config("spark.sql.parquet.enableVectorizedReader", "false") \
-        .config("spark.sql.parquet.mergeSchema", "false") \
         .getOrCreate()
     return spark
 
@@ -35,23 +34,34 @@ def main():
     spark = init_spark()
     
     input_path = f"gs://{args.bucket_name}/raw/nyc_tlc/yellow/*.parquet"
+    print(f"[*] Leyendo archivos origen Parquet con Estrategia Defensiva (Blind String Read) desde: {input_path}")
     
-    print(f"[*] Leyendo archivos origen Parquet nativamente desde: {input_path}")
+    # ============================================================================
+    # 0. EXTRACCIÓN DEFENSIVA (Bypass de ClassCastException binario)
+    # ============================================================================
+    # Definimos absolutamente todo como String para que el decoder de Parquet 
+    # convierta los Double/Long conflictivos a texto plano sin fallar.
+    all_columns = [
+        "VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime", 
+        "passenger_count", "trip_distance", "RatecodeID", "RateCodeID",
+        "store_and_fwd_flag", "PULocationID", "DOLocationID", "payment_type", 
+        "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount", 
+        "improvement_surcharge", "total_amount", "congestion_surcharge", 
+        "airport_fee", "Airport_fee"
+    ]
     
-    # 1. Leer nativamente sin forzar schema ni merge
-    df_raw = spark.read.parquet(input_path)
-    
-    # 2. Imposición de Schema POST-lectura (Casting Seguro)
-    # Manejamos las variaciones de nombres como 'airport_fee' vs 'Airport_fee'
-    airport_fee_col = "Airport_fee" if "Airport_fee" in df_raw.columns else "airport_fee"
-    rate_code_col = "RatecodeID" if "RatecodeID" in df_raw.columns else "RateCodeID"
+    string_schema = StructType([StructField(c, StringType(), True) for c in all_columns])
+    df_raw = spark.read.schema(string_schema).parquet(input_path)
 
+    # ============================================================================
+    # 1. PARSEO Y CONSOLIDACIÓN DE TIPOS (Casting Seguro Post-Lectura)
+    # ============================================================================
     df_cast = df_raw.withColumn("VendorID", F.col("VendorID").cast(LongType())) \
         .withColumn("tpep_pickup_datetime", F.col("tpep_pickup_datetime").cast(TimestampType())) \
         .withColumn("tpep_dropoff_datetime", F.col("tpep_dropoff_datetime").cast(TimestampType())) \
         .withColumn("passenger_count", F.col("passenger_count").cast(DoubleType())) \
         .withColumn("trip_distance", F.col("trip_distance").cast(DoubleType())) \
-        .withColumn("RatecodeID", F.col(rate_code_col).cast(DoubleType())) \
+        .withColumn("RatecodeID", F.coalesce(F.col("RatecodeID"), F.col("RateCodeID")).cast(DoubleType())) \
         .withColumn("store_and_fwd_flag", F.col("store_and_fwd_flag").cast(StringType())) \
         .withColumn("PULocationID", F.col("PULocationID").cast(LongType())) \
         .withColumn("DOLocationID", F.col("DOLocationID").cast(LongType())) \
@@ -63,13 +73,11 @@ def main():
         .withColumn("tolls_amount", F.col("tolls_amount").cast(DoubleType())) \
         .withColumn("improvement_surcharge", F.col("improvement_surcharge").cast(DoubleType())) \
         .withColumn("total_amount", F.col("total_amount").cast(DoubleType())) \
-        .withColumn("congestion_surcharge", F.col("congestion_surcharge").cast(DoubleType()))
-        
-    if airport_fee_col in df_raw.columns:
-         df_cast = df_cast.withColumn("airport_fee", F.col(airport_fee_col).cast(DoubleType()))
+        .withColumn("congestion_surcharge", F.col("congestion_surcharge").cast(DoubleType())) \
+        .withColumn("airport_fee", F.coalesce(F.col("airport_fee"), F.col("Airport_fee")).cast(DoubleType()))
 
     # ============================================================================
-    # 3. LIMPIEZA Y CALIDAD DE DATOS (DATA CLEANSING)
+    # 2. LIMPIEZA Y CALIDAD DE DATOS (DATA CLEANSING)
     # ============================================================================
     df_cleaned = df_cast.filter(
         (F.col("tpep_pickup_datetime").isNotNull()) &
@@ -80,7 +88,7 @@ def main():
     )
 
     # ============================================================================
-    # 4. DIMENSIONES ESTÁTICAS
+    # 3. DIMENSIONES ESTÁTICAS
     # ============================================================================
     vendor_data = [(1, "Creative Mobile Technologies, LLC"), (2, "VeriFone Inc.")]
     df_dim_vendor = spark.createDataFrame(vendor_data, ["vendor_id_pk", "vendor_name"])
@@ -101,7 +109,7 @@ def main():
     df_dim_flag = spark.createDataFrame(flag_data, ["flag_id_pk", "flag_description"])
 
     # ============================================================================
-    # 5. DIMENSIONES DINÁMICAS
+    # 4. DIMENSIONES DINÁMICAS
     # ============================================================================
     df_puzones = df_cleaned.select(F.col("PULocationID").alias("zone_id")).distinct()
     df_dozones = df_cleaned.select(F.col("DOLocationID").alias("zone_id")).distinct()
@@ -140,7 +148,7 @@ def main():
     ).distinct()
 
     # ============================================================================
-    # 6. TABLA DE HECHOS
+    # 5. TABLA DE HECHOS
     # ============================================================================
     df_fact_prep = df_cleaned.withColumn(
         "trip_id_pk", generate_surrogate_key_hash(["VendorID", "tpep_pickup_datetime", "PULocationID", "DOLocationID"])
@@ -187,7 +195,7 @@ def main():
     )
 
     # ============================================================================
-    # 7. ESCRITURA EN BIGQUERY
+    # 6. ESCRITURA EN BIGQUERY
     # ============================================================================
     bq_dataset = f"{args.project_id}.{args.dataset_id}"
     
@@ -212,7 +220,7 @@ def main():
             .mode(write_mode) \
             .save()
             
-    print("[+] ETL procesado e insertado exitosamente de punta a punta.")
+    print("[+] ETL procesado e insertado exitosamente.")
     spark.stop()
 
 if __name__ == "__main__":
