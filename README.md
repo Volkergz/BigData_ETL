@@ -25,7 +25,7 @@ chmod +x ./*/*.sh
 1. Ejecutamos el script que ejecuta la extración
 
 ```
-.nyc-tlc-extractor/deploy.sh
+./nyc-tlc-extractor/deploy.sh
 ```
 
 > Antes de continuar, espera que el script termine su ejecución
