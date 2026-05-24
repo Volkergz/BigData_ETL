@@ -82,7 +82,7 @@ gcloud functions deploy "${SERVICE_NAME}" \
     --entry-point=sync_nyc_data \
     --trigger-http \
     --timeout=3600 \
-    --memory=1Gi \
+    --memory=4Gi \
     --service-account="${SA_EMAIL}" \
     --set-env-vars LANDING_BUCKET="${BUCKET_NAME}" \
     --no-allow-unauthenticated
