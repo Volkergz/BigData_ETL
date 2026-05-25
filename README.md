@@ -20,32 +20,43 @@ cd ./BigData_ETL
 chmod +x ./*/*.sh
 ```
 
-## Parte 1 - Extracción
+## 1. Función: de .parquet a BigQuery
+
+> Esta función es activada cuando se crea un nuevo archivo en el bucket "ingesta-nyc-tlc", en donde toma el nuevo archivo, crea una tabla en BigQuery con el nombre del archivo, y luego guarda todos los datos en dicha tabla. Este proceso lo repite por cada uno de los archivos .parquet.
 
 1. Ejecutamos el script que ejecuta la extración
-
 ```
-./nyc-tlc-extractor/deploy.sh
+./func-parquet-to-BQ/script.sh
+```
+
+
+## 2. Función: descarga de .parquet
+
+> Esta función es activada al princio de cada vez (o Manualmente), en donde primero, revisa en el bucket los archivos ya existentes, y en base a ellos, genera una lista de fechas para descargar los archivos, posteriormente solicita los recursos a travez de una petición https a NYC-TLC para cara archivo y los guardar en el Bucket.
+
+1. Ejecutamos el script que ejecuta la extración
+```
+./func-download-parquet/script.sh
 ```
 
 > Antes de continuar, espera que el script termine su ejecución
 
 2. Activamos manualmente el trigger del servicio
-
 ```
 gcloud scheduler jobs run nyc-tlc-monthly-sync --location={Añade aqui la región}
 ```
 
 > Ahora el **Job** esta descargando todos los archivos, el proceso puede tardar hasta 10min en completarse
 
-## Parte 2 - Carga
+# ¡TRABAJO EN PROCESO!
 
-> En esta sección **Solo se realizara la configuración inicial** que debe tener BigQuery para poder guardar la data procesada
+## Función: crear base de datos dimensional
+
+> En esta sección **Solo se realizara la creación de las tablas** que debe tener BigQuery para poder guardar la data procesada.
 
 1. Ejecutamos el script que ejecuta configuración del ambiente
-
 ```
-./nyc-tlc-loader/loading.sh
+./func-create-DB/script.sh
 ```
 
 > Antes de continuar, espera que el script termine su ejecución
