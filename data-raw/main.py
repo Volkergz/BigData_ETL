@@ -5,7 +5,7 @@ import base64
 import json
 from google.cloud import bigquery
 
-PROJECT_ID = os.getenv("GCP_PROJECT")
+PROJECT_ID = os.getenv("PROJECT_ID")
 DATASET_ID = os.getenv("DATASET_ID", "nyc_tlc_yellow")
 LOCATION = os.getenv("DATASET_LOCATION", "US")
 

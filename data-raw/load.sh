@@ -87,7 +87,7 @@ gcloud functions deploy "${SERVICE_NAME}" \
     --memory=1Gi \
     --max-instances=10 \
     --service-account="${SA_EMAIL}" \
-    --set-env-vars DATASET_ID=nyc_tlc_yellow,DATASET_LOCATION=US \
+    --set-env-vars DATASET_ID=nyc_tlc_yellow,DATASET_LOCATION=US,PROJECT_ID=${PROJECT_ID} \
     --allow-unauthenticated # Requerido en laboratorios para recibir webhooks sin fricción
 
 # 7. Vinculación Directa de Almacenamiento (Pub/Sub Notification Native Engine)
