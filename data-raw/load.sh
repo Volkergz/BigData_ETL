@@ -33,7 +33,7 @@ gcloud functions deploy gcs-nyc-tlc-extractor \
     --gen2 \
     --runtime=python311 \
     --region=$REGION \
-    --main-entry-point=gcs_to_bigquery_trigger \
+    --entry-point=gcs_to_bigquery_trigger \
     --trigger-event-resource="projects/_/buckets/$BUCKET_NAME" \
     --trigger-event=google.cloud.storage.object.v1.finalized \
     --set-env-vars DATASET_ID="$DATASET_ID",DATASET_LOCATION=US \
