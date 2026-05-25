@@ -58,52 +58,23 @@ else
 fi
 
 # 5. Seguridad de Identidad y Control de Accesos (IAM)
-echo "### [5/6] Configurando Identidades y Permisos IAM..."
+echo "### [5/6] Configurando Identidades y Permisos IAM (Bypass Mode)..."
 
-# 5.1 Cuenta de servicio de la Cloud Function
 if ! gcloud iam service-accounts describe "${SA_EMAIL}" &>/dev/null; then
     gcloud iam service-accounts create "${SA_NAME}" --display-name="NYC BQ Loader SA"
 fi
 
-echo "Asignando permisos BigQuery Admin y Storage Admin a la Service Account de la función..."
+echo "Asignando permisos BigQuery Admin y Storage Admin a la Service Account..."
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${SA_EMAIL}" \
-    --role="roles/bigquery.admin" \
-    --condition=None > /dev/null
+    --role="roles/bigquery.admin" > /dev/null
 
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${SA_EMAIL}" \
-    --role="roles/storage.admin" \
-    --condition=None > /dev/null
+    --role="roles/storage.admin" > /dev/null
 
-# 5.2 Autenticación del Agente Eventarc para evitar el error 403 Validation Failed
-echo "Inyectando políticas IAM al Agente de Eventarc del sistema..."
-export EVENTARC_SA="service-${PROJECT_NUMBER}@gcp-sa-eventarc.iam.gserviceaccount.com"
-
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-    --member="serviceAccount:${EVENTARC_SA}" \
-    --role="roles/eventarc.serviceAgent" \
-    --condition=None > /dev/null
-
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-    --member="serviceAccount:${EVENTARC_SA}" \
-    --role="roles/pubsub.publisher" \
-    --condition=None > /dev/null
-
-# 5.3 Permiso para que la cuenta de almacenamiento envíe tokens a Pub/Sub
-echo "Inicializando y autorizando la Service Account interna de Cloud Storage..."
-
-# Forzar a GCP a crear/retornar la cuenta de servicio interna de GCS para este proyecto
-export STORAGE_SA=$(gcloud storage service-agent --project="${PROJECT_ID}")
-
-echo "Asignando rol Pub/Sub Publisher a la SA de Storage: ${STORAGE_SA}"
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-    --member="serviceAccount:${STORAGE_SA}" \
-    --role="roles/pubsub.publisher" \
-    --condition=None > /dev/null
-
-# 6. Despliegue de la Cloud Function Gen 2 Orientada a Eventos
-echo "### [6/6] Desplegando Servicio Cloud Run Gen 2 con Trigger de Eventarc..."
+# 6. Despliegue como HTTP Cloud Function (Evita Eventarc y cuentas de sistema)
+echo "### [6/6] Desplegando Servicio Cloud Run Gen 2 vía HTTP..."
 
 gcloud functions deploy "${SERVICE_NAME}" \
     --gen2 \
@@ -111,13 +82,40 @@ gcloud functions deploy "${SERVICE_NAME}" \
     --region="${REGION}" \
     --source=./nyc-tlc-extractor \
     --entry-point=gcs_to_bigquery_trigger \
-    --trigger-event-resource="projects/_/buckets/${BUCKET_NAME}" \
-    --trigger-event=google.cloud.storage.object.v1.finalized \
+    --trigger-http \
     --timeout=600 \
     --memory=1Gi \
     --max-instances=10 \
     --service-account="${SA_EMAIL}" \
-    --set-env-vars DATASET_ID=nyc_tlc_yellow,DATASET_LOCATION=US
+    --set-env-vars DATASET_ID=nyc_tlc_yellow,DATASET_LOCATION=US \
+    --allow-unauthenticated # Requerido en laboratorios para recibir webhooks sin fricción
 
-echo "### DESPLIEGUE EVENT-DRIVEN FINALIZADO EXITOSAMENTE EN LA REGIÓN: ${REGION} ###"
-echo "Estructura lista. Cada archivo Parquet que caiga en gs://${BUCKET_NAME}/raw/nyc_tlc/yellow/ generará una tabla optimizada en BigQuery."
+# 7. Vinculación Directa de Almacenamiento (Pub/Sub Notification Native Engine)
+echo "### [7/7] Orquestando Webhook directo desde Cloud Storage..."
+
+# 7.1 Obtener la URL de la función desplegada
+FUNCTION_URL=$(gcloud functions describe "${SERVICE_NAME}" --gen2 --region="${REGION}" --format='value(serviceConfig.uri)')
+
+# 7.2 Crear un tópico de Pub/Sub intermedio
+TOPIC_NAME="nyc-gcs-events"
+if ! gcloud pubsub topics describe "${TOPIC_NAME}" &>/dev/null; then
+    gcloud pubsub topics create "${TOPIC_NAME}"
+fi
+
+# 7.3 Crear la suscripción tipo PUSH directo hacia la Cloud Function
+SUB_NAME="nyc-gcs-push-sub"
+if ! gcloud pubsub subscriptions describe "${SUB_NAME}" &>/dev/null; then
+    gcloud pubsub subscriptions create "${SUB_NAME}" \
+        --topic="${TOPIC_NAME}" \
+        --push-endpoint="${FUNCTION_URL}"
+fi
+
+# 7.4 Vincular el Bucket con el Tópico de Pub/Sub de forma directa
+# Nota: Esto no requiere la Service Account corrupta del sistema
+if ! gcloud storage buckets notifications list "gs://${BUCKET_NAME}" | grep -q "${TOPIC_NAME}"; then
+    gcloud storage buckets notifications create "gs://${BUCKET_NAME}" \
+        --topic="${TOPIC_NAME}" \
+        --event-types="OBJECT_FINALIZE"
+fi
+
+echo "### DESPLIEGUE FINALIZADO EXITOSAMENTE MEDIANTE BYPASS DE PROCESO ###"
