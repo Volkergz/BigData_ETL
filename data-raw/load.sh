@@ -91,7 +91,12 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --condition=None > /dev/null
 
 # 5.3 Permiso para que la cuenta de almacenamiento envíe tokens a Pub/Sub
-export STORAGE_SA="service-${PROJECT_NUMBER}@gs-project-accounts.iam.gserviceaccount.com"
+echo "Inicializando y autorizando la Service Account interna de Cloud Storage..."
+
+# Forzar a GCP a crear/retornar la cuenta de servicio interna de GCS para este proyecto
+export STORAGE_SA=$(gcloud storage service-agent --project="${PROJECT_ID}")
+
+echo "Asignando rol Pub/Sub Publisher a la SA de Storage: ${STORAGE_SA}"
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${STORAGE_SA}" \
     --role="roles/pubsub.publisher" \
