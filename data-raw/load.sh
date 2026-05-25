@@ -6,7 +6,7 @@
 set -eo pipefail
 
 # 1. Detección Inteligente de Región (Org Policy Compliant)
-echo "### [1/6] Autodetectando región bajo restricciones de Resource Location..."
+echo "### [1/7] Autodetectando región bajo restricciones de Resource Location..."
 
 RAW_LOCATION=$(gcloud beta resource-manager org-policies describe gcp.resourceLocations \
     --project="$(gcloud config get-value project)" 2>/dev/null || echo "")
@@ -29,7 +29,7 @@ gcloud config set compute/region "$REGION"
 echo " - Región configurada: $REGION"
 
 # 2. Configuración de Variables Globales
-echo "### [2/6] Inicializando variables de entorno..."
+echo "### [2/7] Inicializando variables de entorno..."
 export PROJECT_ID=$(gcloud config get-value project)
 export PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)")
 export BUCKET_NAME="ingesta-nyc-tlc-${PROJECT_ID}"
@@ -38,7 +38,7 @@ export SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export SERVICE_NAME="gcs-to-bigquery-trigger"
 
 # 3. Activación de APIs requeridas (Incluyendo Eventarc)
-echo "### [3/6] Verificando y habilitando APIs de Google Cloud..."
+echo "### [3/7] Verificando y habilitando APIs de Google Cloud..."
 gcloud services enable \
     artifactregistry.googleapis.com \
     cloudfunctions.googleapis.com \
@@ -48,7 +48,7 @@ gcloud services enable \
     eventarc.googleapis.com
 
 # 4. Creación de la Landing Zone en Storage
-echo "### [4/6] Configurando almacenamiento en GCS (${REGION})..."
+echo "### [4/7] Configurando almacenamiento en GCS (${REGION})..."
 if ! gcloud storage buckets describe "gs://${BUCKET_NAME}" &>/dev/null; then
     gcloud storage buckets create "gs://${BUCKET_NAME}" \
         --location="${REGION}" \
@@ -58,7 +58,7 @@ else
 fi
 
 # 5. Seguridad de Identidad y Control de Accesos (IAM)
-echo "### [5/6] Configurando Identidades y Permisos IAM (Bypass Mode)..."
+echo "### [5/7] Configurando Identidades y Permisos IAM (Bypass Mode)..."
 
 if ! gcloud iam service-accounts describe "${SA_EMAIL}" &>/dev/null; then
     gcloud iam service-accounts create "${SA_NAME}" --display-name="NYC BQ Loader SA"
@@ -74,13 +74,13 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --role="roles/storage.admin" > /dev/null
 
 # 6. Despliegue como HTTP Cloud Function (Evita Eventarc y cuentas de sistema)
-echo "### [6/6] Desplegando Servicio Cloud Run Gen 2 vía HTTP..."
+echo "### [6/7] Desplegando Servicio Cloud Run Gen 2 vía HTTP..."
 
 gcloud functions deploy "${SERVICE_NAME}" \
     --gen2 \
     --runtime=python311 \
     --region="${REGION}" \
-    --source=./nyc-tlc-extractor \
+    --source=./data-raw/ \
     --entry-point=gcs_to_bigquery_trigger \
     --trigger-http \
     --timeout=600 \
