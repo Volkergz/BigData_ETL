@@ -25,16 +25,25 @@ export PROJECT_ID=$(gcloud config get-value project)
 export BUCKET_NAME="ingesta-nyc-tlc-${PROJECT_ID}"
 export DATASET_ID="nyc_raw"
 
-# Variables de entorno para el despliegue
-export BUCKET_NAME="TU_BUCKET_NAME"
-export REGION="us-central1" # Asegúrate de que coincida con la región de Eventarc/GCS si es posible
+# 3. Habilitar APIs
+echo "=== [3/4] Habilitando APIs..."
+# Habilitar Eventarc y dependencias de Cloud Functions v2
+gcloud services enable \
+    eventarc.googleapis.com \
+    run.googleapis.com \
+    artifactregistry.googleapis.com \
+    cloudfunctions.googleapis.com
+
+# 4. Desplegar Cloud Function
+echo "=== [4/4] Desplegando Cloud Function..."
 
 gcloud functions deploy gcs-nyc-tlc-extractor \
     --gen2 \
+    --source="./data-raw/" \
     --runtime=python311 \
     --region=$REGION \
     --entry-point=gcs_to_bigquery_trigger \
-    --trigger-event-resource="projects/_/buckets/$BUCKET_NAME" \
+    --trigger-resource="projects/_/buckets/$BUCKET_NAME" \
     --trigger-event=google.cloud.storage.object.v1.finalized \
     --set-env-vars DATASET_ID="$DATASET_ID",DATASET_LOCATION=US \
     --max-instances=10 \
