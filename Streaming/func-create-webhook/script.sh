@@ -7,7 +7,7 @@ IFS=$'\n\t'
 echo "========== [START] Inicializando Despliegue en GCP =========="
 
 # 1. Detección Inteligente de Región (Org Policy Compliant)
-echo "### [1/7] Autodetectando región bajo restricciones de Resource Location..."
+echo "### [1/6] Autodetectando región bajo restricciones de Resource Location..."
 
 RAW_LOCATION=$(gcloud beta resource-manager org-policies describe gcp.resourceLocations \
     --project="$(gcloud config get-value project)" 2>/dev/null || echo "")
@@ -31,7 +31,7 @@ gcloud config set compute/region "$REGION"
 echo " - Región configurada: $REGION"
 
 # 2. Configuración de Variables de Entorno
-echo "### [2/7] Inicializando variables de entorno..."
+echo "### [2/6] Inicializando variables de entorno..."
 export PROJECT_ID=$(gcloud config get-value project)
 export TOPIC_NAME="registros_compras"
 export SUBSCRIPTION_NAME="${TOPIC_NAME}-subscription"
@@ -49,7 +49,7 @@ echo "Proyecto: ${PROJECT_ID}"
 echo "Región:   ${REGION}"
 
 # 3. CREACIÓN DEL TOPIC EN PUB/SUB
-echo "### [3/7] Creando el Topic ${TOPIC_NAME} (Pub/Sub)..."
+echo "### [3/6] Creando el Topic ${TOPIC_NAME} (Pub/Sub)..."
 
 # Verificar si el tópico ya existe para evitar colisiones
 if ! gcloud pubsub topics describe "${TOPIC_NAME}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
@@ -62,7 +62,7 @@ else
 fi
 
 # 4. CREACIÓN DE LA SUSCRIPCIÓN EN PUB/SUB
-echo "### [4/7] Creando la Suscripción ${SUBSCRIPTION_NAME} en el Topic ${TOPIC_NAME} (Pub/Sub)..."
+echo "### [4/6] Creando la Suscripción ${SUBSCRIPTION_NAME} en el Topic ${TOPIC_NAME} (Pub/Sub)..."
 
 # Crear la suscripción correspondiente (Pull por defecto, útil para el checkpointing de Dataflow)
 if ! gcloud pubsub subscriptions describe "${SUBSCRIPTION_NAME}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
@@ -78,13 +78,13 @@ else
 fi
 
 # 5. CREACIÓN DE LA CUENTA DE SERVICIO PARA LA CLOUD FUNCTION Y ASIGNACIÓN DE PERMISOS
-echo "### [5/7] Creando Service Account para la Cloud Function y asignando permisos necesarios..."
+echo "### [5/6] Creando Service Account para la Cloud Function y asignando permisos necesarios..."
 
 # Creación del Service Account para la Cloud Function (Principio de Menor Privilegio)
 if ! gcloud iam service-accounts describe "${SA_NAME}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
     echo "Creando Service Account para la Cloud Function..."
     
-    gcloud iam service-accounts create "sa-webhook-pubsub" \
+    gcloud iam service-accounts create "${SA_NAME}" \
         --description="Service account para validar webhook y publicar en Pub/Sub" \
         --display-name="SA Webhook PubSub" \
         --project="${PROJECT_ID}"
@@ -101,7 +101,7 @@ else
 fi
 
 # 6. CREACIÓN DE LA CLOUD FUNCTION
-echo "### [6/7] Desplegando la Cloud Function ${SERVICE_NAME}..."
+echo "### [6/6] Desplegando la Cloud Function ${SERVICE_NAME}..."
 
 # Definir el directorio de origen del código de la función (donde se encuentra el Dockerfile)
 export FUNCTION_SOURCE_DIR="./Streaming/func-create-webhook"
@@ -113,25 +113,7 @@ if [[ ! -f "${FUNCTION_SOURCE_DIR}/main.py" || ! -f "${FUNCTION_SOURCE_DIR}/requ
     exit 1
 fi
 
-# 6.2 Creación del Service Account para la Cloud Function (Principio de Menor Privilegio)
-if ! gcloud iam service-accounts describe "${SA_EMAIL}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
-    echo "Creando Service Account para la Cloud Function..."
-    gcloud iam service-accounts create "sa-webhook-pubsub" \
-        --description="Service account para validar webhook y publicar en Pub/Sub" \
-        --display-name="SA Webhook PubSub" \
-        --project="${PROJECT_ID}"
-    
-    # Otorgar permisos para publicar en el tópico específico
-    echo "Asignando rol roles/pubsub.publisher sobre el tópico..."
-    gcloud pubsub topics add-iam-policy-binding "${TOPIC_NAME}" \
-        --project="${PROJECT_ID}" \
-        --member="serviceAccount:${SA_EMAIL}" \
-        --role="roles/pubsub.publisher" >/dev/null
-else
-    echo "El Service Account ${SA_EMAIL} ya existe. Omitiendo creación."
-fi
-
-# 6.3 Despliegue de la Cloud Function (Gen 2) apuntando al código del repositorio
+# 6.2 Despliegue de la Cloud Function (Gen 2) apuntando al código del repositorio
 echo "Desplegando Cloud Function ${SERVICE_NAME} desde origen: ${FUNCTION_SOURCE_DIR}..."
 gcloud functions deploy "${SERVICE_NAME}" \
     --gen2 \
