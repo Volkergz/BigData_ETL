@@ -94,10 +94,10 @@ if ! gcloud iam service-accounts describe "${SA_NAME}" --project="${PROJECT_ID}"
     
     gcloud pubsub topics add-iam-policy-binding "${TOPIC_NAME}" \
         --project="${PROJECT_ID}" \
-        --member="serviceAccount:${SA_NAME}" \
+        --member="serviceAccount:${SA_EMAIL}" \
         --role="roles/pubsub.publisher" >/dev/null
 else
-    echo "El Service Account ${SA_NAME} ya existe."
+    echo "El Service Account ${SA_EMAIL} ya existe."
 fi
 
 # 6. CREACIÓN DE LA CLOUD FUNCTION
