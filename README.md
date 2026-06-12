@@ -1,4 +1,4 @@
-# BigData_ETL - Guia de Ejecución
+# BigData_ETL - Guia de Ejecución BATCH
 
 ## Configuración Inicial
 
@@ -78,3 +78,34 @@ gcloud compute networks subnets update default \
 ```
 
 > Ahora solo esperamos que los datos sean procesados, este proceso puede tardar mucho tiempo.
+
+# BigData_ETL - Guia de Ejecución STREAMING
+
+## Configuración Inicial
+
+1. Clona el repositorio en CloudShell
+
+```
+git clone --single-branch --branch streaming https://github.com/Volkergz/BigData_ETL.git
+```
+
+2. Cambiamos al directorio del proyecto
+
+```
+cd ./BigData_ETL
+```
+
+3. Otorgamos permiso de ejecusión a los archivos
+
+```
+chmod +x /*/*/*.sh
+```
+
+## 1. Función: creación del webhook (Pub/Sub)
+
+> Esta función crear el Pipeline que recibe los mensajes del servidor con los datos de compra, desplegado en una cloud Function, utilizando Pub/Sub.
+
+1. Ejecutamos el script que ejecuta la creación del Pipeline
+```
+./func-parquet-to-BQ/script.sh
+```
