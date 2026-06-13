@@ -51,7 +51,7 @@ echo " Suscripción: ${SUBSCRIPTION_NAME}"
 echo " Destino BQ:  ${BQ_DATASET}.${BQ_TABLE}"
 
 # 3. CREACIÓN DEL DATASET Y TABLA OPTIMIZADA EN BIGQUERY
-echo "### [3/5] Configurando almacenamiento optimizado en BigQuery..."
+echo "### [3/6] Configurando almacenamiento optimizado en BigQuery..."
 
 # 3.1 Crear Dataset si no existe
 if ! bq show --project_id="${PROJECT_ID}" "${BQ_DATASET}" >/dev/null 2>&1; then
@@ -94,7 +94,7 @@ fi
 
 
 # 4. CREACIÓN DEL BUCKET DE STAGING PARA DATAFLOW
-echo "### [4/5] Configurando Bucket de almacenamiento intermedio..."
+echo "### [4/6] Configurando Bucket de almacenamiento intermedio..."
 
 if ! gsutil ls -b "gs://${GCS_BUCKET_NAME}" >/dev/null 2>&1; then
     echo " Creando Storage Bucket: gs://${GCS_BUCKET_NAME}..."
@@ -104,7 +104,7 @@ else
 fi
 
 # 5. VALIDACIÓN / CREACIÓN DE LA SERVICE ACCOUNT PARA WORKERS DE DATAFLOW
-echo "### [5/5] Validando permisos y Service Account para Dataflow Workers..."
+echo "### [5/6] Validando permisos y Service Account para Dataflow Workers..."
 
 if ! gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(email)" | grep -q "^${SA_DATAFLOW}$"; then
     echo " Creando SA para Dataflow Workers..."
@@ -125,7 +125,7 @@ else
 fi
 
 # 6. DESPLIEGUE DEL PIPELINE DE DATAFLOW (STREAMING)
-echo "### [6/5] Lanzando Job de Dataflow en modo Streaming..."
+echo "### [6/6] Lanzando Job de Dataflow en modo Streaming..."
 
 # Verificar si el Job ya se encuentra corriendo para evitar duplicaciones analíticas
 if ! gcloud dataflow jobs list --project="${PROJECT_ID}" --region="${REGION}" --status=active --format="value(name)" | grep -q "^${DATAFLOW_JOB_NAME}$"; then
@@ -136,9 +136,7 @@ if ! gcloud dataflow jobs list --project="${PROJECT_ID}" --region="${REGION}" --
         --project="${PROJECT_ID}" \
         --service-account-email="${SA_DATAFLOW}" \
         --staging-location="gs://${GCS_BUCKET_NAME}/staging/" \
-        --parameters \
-inputSubscription="projects/${PROJECT_ID}/subscriptions/${SUBSCRIPTION_NAME}",\
-outputTableSpec="${PROJECT_ID}:${BQ_DATASET}.${BQ_TABLE}"
+        --parameters= inputSubscription="projects/${PROJECT_ID}/subscriptions/${SUBSCRIPTION_NAME}", outputTableSpec="${PROJECT_ID}:${BQ_DATASET}.${BQ_TABLE}"
 
     echo " ¡Job de Dataflow lanzado con éxito!"
 else
