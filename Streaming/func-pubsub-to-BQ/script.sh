@@ -131,7 +131,7 @@ echo "### [6/6] Lanzando Job de Dataflow en modo Streaming..."
 if ! gcloud dataflow jobs list --project="${PROJECT_ID}" --region="${REGION}" --status=active --format="value(name)" | grep -q "^${DATAFLOW_JOB_NAME}$"; then
     
     gcloud dataflow jobs run "${DATAFLOW_JOB_NAME}" \
-        --gcs-location="gs://dataflow-templates-${REGION}/latest/PubSub_to_BigQuery" \
+        --gcs-location="gs://dataflow-templates-${REGION}/latest/PubSub_Subscription_to_BigQuery" \
         --region="${REGION}" \
         --project="${PROJECT_ID}" \
         --service-account-email="${SA_DATAFLOW}" \
