@@ -92,10 +92,9 @@ else
     echo " La tabla ${BQ_DATASET}.${BQ_TABLE} ya existe. Omitiendo creación."
 fi
 
-# ==============================================================================
-# 3. CREACIÓN DEL BUCKET DE STAGING PARA DATAFLOW
-# ==============================================================================
-echo "### [3/5] Configurando Bucket de almacenamiento intermedio..."
+
+# 4. CREACIÓN DEL BUCKET DE STAGING PARA DATAFLOW
+echo "### [4/5] Configurando Bucket de almacenamiento intermedio..."
 
 if ! gsutil ls -b "gs://${GCS_BUCKET_NAME}" >/dev/null 2>&1; then
     echo " Creando Storage Bucket: gs://${GCS_BUCKET_NAME}..."
@@ -104,10 +103,8 @@ else
     echo " El bucket gs://${GCS_BUCKET_NAME} ya existe."
 fi
 
-# ==============================================================================
-# 4. VALIDACIÓN / CREACIÓN DE LA SERVICE ACCOUNT PARA WORKERS DE DATAFLOW
-# ==============================================================================
-echo "### [4/5] Validando permisos y Service Account para Dataflow Workers..."
+# 5. VALIDACIÓN / CREACIÓN DE LA SERVICE ACCOUNT PARA WORKERS DE DATAFLOW
+echo "### [5/5] Validando permisos y Service Account para Dataflow Workers..."
 
 if ! gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(email)" | grep -q "^${SA_DATAFLOW}$"; then
     echo " Creando SA para Dataflow Workers..."
@@ -116,21 +113,19 @@ if ! gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(
         --display-name="Dataflow Worker Service Account" \
         --project="${PROJECT_ID}"
     
+    sleep 7 # Espera de cortesía para propagación de IAMs
     echo " Asignando roles necesarios (Dataflow Worker, Pub/Sub Subscriber, BigQuery DataEditor)..."
     for ROLE in roles/dataflow.worker roles/pubsub.subscriber roles/bigquery.dataEditor roles/storage.objectAdmin; do
         gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
             --member="serviceAccount:${SA_DATAFLOW}" \
             --role="${ROLE}" >/dev/null
     done
-    sleep 5 # Espera de cortesía para propagación de IAM
 else
     echo " [OK] La Service Account ${SA_DATAFLOW} ya está configurada."
 fi
 
-# ==============================================================================
-# 5. DESPLIEGUE DEL PIPELINE DE DATAFLOW (STREAMING)
-# ==============================================================================
-echo "### [5/5] Lanzando Job de Dataflow en modo Streaming..."
+# 6. DESPLIEGUE DEL PIPELINE DE DATAFLOW (STREAMING)
+echo "### [6/5] Lanzando Job de Dataflow en modo Streaming..."
 
 # Verificar si el Job ya se encuentra corriendo para evitar duplicaciones analíticas
 if ! gcloud dataflow jobs list --project="${PROJECT_ID}" --region="${REGION}" --status=active --format="value(name)" | grep -q "^${DATAFLOW_JOB_NAME}$"; then

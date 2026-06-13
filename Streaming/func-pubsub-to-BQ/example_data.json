@@ -1,0 +1,12 @@
+{
+    "id_cliente": "1", 
+    "cliente": "Raul Opazo", 
+    "genero": "H", 
+    "id_producto": "4", 
+    "producto": "Alphabet", 
+    "precio": "141.25", 
+    "cantidad": 55, 
+    "monto": "7768.75", 
+    "forma_pago": "Cr\u00e9dito", 
+    "fecreg": "2026-06-13T23:00:02.164Z"
+}
