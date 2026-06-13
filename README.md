@@ -107,5 +107,11 @@ chmod +x /*/*/*.sh
 
 1. Ejecutamos el script que ejecuta la creación del Pipeline
 ```
-./func-parquet-to-BQ/script.sh
+./Streaming/func-create-webhook/script.sh
 ```
+
+> Una vez creada la cloud function, ve a la sección **Cloud Run**, y en la función que acabamos de crear, encontrataras el enlace https que debes copiar.
+
+2. Para acceder al servidor que nos proveera los registros, debemos entrar en el siguiente [enlance](https://bdrealtimeescuelait.duoc.cl/login/).
+
+3. Una vez hayamos hecho login en el sitio web, vamos a ingresar en el campo **URL** la direción que obtuvimos en __Cloud Run__.
