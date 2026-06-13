@@ -137,8 +137,8 @@ if ! gcloud dataflow jobs list --project="${PROJECT_ID}" --region="${REGION}" --
         --service-account-email="${SA_DATAFLOW}" \
         --staging-location="gs://${GCS_BUCKET_NAME}/staging/" \
         --parameters \
-        inputSubscription="projects/${PROJECT_ID}/subscriptions/${SUBSCRIPTION_NAME}",\
-        outputTableSpec="${PROJECT_ID}:${BQ_DATASET}.${BQ_TABLE}"
+inputSubscription="projects/${PROJECT_ID}/subscriptions/${SUBSCRIPTION_NAME}",\
+outputTableSpec="${PROJECT_ID}:${BQ_DATASET}.${BQ_TABLE}"
 
     echo " ¡Job de Dataflow lanzado con éxito!"
 else
