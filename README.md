@@ -115,3 +115,12 @@ chmod +x /*/*/*.sh
 2. Para acceder al servidor que nos proveera los registros, debemos entrar en el siguiente [enlance](https://bdrealtimeescuelait.duoc.cl/login/).
 
 3. Una vez hayamos hecho login en el sitio web, vamos a ingresar en el campo **URL** la direción que obtuvimos en __Cloud Run__.
+
+## 2. Función: creación del webhook (Pub/Sub)
+
+> Esta función crear el Pipeline que recibe los archivos JSON y los guarda en BigQuery.
+
+1. Ejecutamos el script que ejecuta la creación del Pipeline
+```
+./Streaming/func-pubsub-to-BQ/script.sh
+```

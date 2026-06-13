@@ -94,7 +94,8 @@ if ! gcloud iam service-accounts describe "${SA_EMAIL}" --project="${PROJECT_ID}
         --description="Service account para validar webhook y publicar en Pub/Sub" \
         --display-name="SA Webhook PubSub" \
         --project="${PROJECT_ID}"
-    
+    sleep 5 # Espera de cortesía para propagación de IAM
+
     # Otorgar permisos para publicar en el tópico específico
     echo "Asignando rol roles/pubsub.publisher sobre el tópico..."
     
