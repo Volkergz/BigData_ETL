@@ -40,10 +40,6 @@ export SA_NAME="webhook-registros-compras"
 export SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 export SERVICE_NAME="webhook-registros-compras"
 
-#export SA_NAME="sa-nyc-ingestor"
-#export SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
-#export SERVICE_NAME="nyc-sync-engine"
-
 # Información de contexto para el usuario
 echo "Proyecto: ${PROJECT_ID}"
 echo "Región:   ${REGION}"
