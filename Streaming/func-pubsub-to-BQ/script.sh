@@ -140,7 +140,7 @@ else
     echo " [OK] La Service Account ${SA_DATAFLOW} ya está configurada."
 fi
 
-# 6. DESPLIEGUE DEL PIPELINE DE DATAFLOW (STREAMING)
+# 7. DESPLIEGUE DEL PIPELINE DE DATAFLOW (STREAMING)
 echo "### [7/7] Lanzando Job de Dataflow en modo Streaming..."
 
 # Verificar si el Job ya se encuentra corriendo para evitar duplicaciones analíticas
