@@ -106,6 +106,7 @@ fi
 # 5. VALIDACIÓN / CREACIÓN DE LA SERVICE ACCOUNT PARA WORKERS DE DATAFLOW
 echo "### [5/6] Validando permisos y Service Account para Dataflow Workers..."
 
+# 5.1 Verificar si la Service Account ya existe, si no, crearla y asignar roles necesarios
 if ! gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(email)" | grep -q "^${SA_DATAFLOW}$"; then
     echo " Creando SA para Dataflow Workers..."
     gcloud iam service-accounts create "sa-dataflow-worker" \
@@ -113,7 +114,7 @@ if ! gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(
         --display-name="Dataflow Worker Service Account" \
         --project="${PROJECT_ID}"
     
-    sleep 7 # Espera de cortesía para propagación de IAMs
+    sleep 10 # Espera de cortesía para propagación de IAMs
     echo " Asignando roles necesarios (Dataflow Worker, Pub/Sub Subscriber, BigQuery DataEditor)..."
     for ROLE in roles/dataflow.worker roles/pubsub.subscriber roles/bigquery.dataEditor roles/storage.objectAdmin; do
         gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
@@ -123,6 +124,17 @@ if ! gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(
 else
     echo " [OK] La Service Account ${SA_DATAFLOW} ya está configurada."
 fi
+
+# 5.2 Autorizar al Dataflow Service Agent para suplantar al Worker (requisito para pipelines con SA personalizada)
+export PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)")
+export DATAFLOW_SERVICE_AGENT="service-${PROJECT_NUMBER}@dataflow-service-producer-prod.iam.gserviceaccount.com"
+
+echo " Autorizando al Dataflow Service Agent para suplantar al Worker..."
+gcloud iam service-accounts add-iam-policy-binding "${SA_DATAFLOW}" \
+    --project="${PROJECT_ID}" \
+    --member="serviceAccount:${DATAFLOW_SERVICE_AGENT}" \
+    --role="roles/iam.serviceAccountUser" \
+    --quiet >/dev/null
 
 # 6. DESPLIEGUE DEL PIPELINE DE DATAFLOW (STREAMING)
 echo "### [6/6] Lanzando Job de Dataflow en modo Streaming..."
