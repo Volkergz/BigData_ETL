@@ -7,7 +7,7 @@ IFS=$'\n\t'
 echo "========== [START] Inicializando Pipeline Analítico (Pub/Sub -> BigQuery) =========="
 
 # 1. Detección Inteligente de Región (Org Policy Compliant)
-echo "### [1/6] Autodetectando región bajo restricciones de Resource Location..."
+echo "### [1/7] Autodetectando región bajo restricciones de Resource Location..."
 
 RAW_LOCATION=$(gcloud beta resource-manager org-policies describe gcp.resourceLocations \
     --project="$(gcloud config get-value project)" 2>/dev/null || echo "")
@@ -31,7 +31,7 @@ gcloud config set compute/region "$REGION"
 echo " - Región configurada: $REGION"
 
 # 2. Configuración de Variables de Entorno
-echo "### [2/6] Inicializando variables de entorno..."
+echo "### [2/7] Inicializando variables de entorno..."
 export PROJECT_ID=$(gcloud config get-value project)
 # Origenes de datos
 export TOPIC_NAME="registros_compras"
@@ -50,8 +50,23 @@ echo " Región:      ${REGION}"
 echo " Suscripción: ${SUBSCRIPTION_NAME}"
 echo " Destino BQ:  ${BQ_DATASET}.${BQ_TABLE}"
 
+# 3. HABILITACIÓN DE APIS NECESARIAS PARA EL STACK ANALÍTICO
+echo "### [3/7] Verificando y habilitando APIs de Google Cloud..."
+
+gcloud services enable \
+    dataflow.googleapis.com \
+    bigquery.googleapis.com \
+    storage.googleapis.com \
+    compute.googleapis.com \
+    pubsub.googleapis.com \
+    iam.googleapis.com \
+    --quiet
+
+echo " [OK] APIs del stack analítico activadas correctamente."
+
+
 # 3. CREACIÓN DEL DATASET Y TABLA OPTIMIZADA EN BIGQUERY
-echo "### [3/6] Configurando almacenamiento optimizado en BigQuery..."
+echo "### [4/7] Configurando almacenamiento optimizado en BigQuery..."
 
 # 3.1 Crear Dataset si no existe
 if ! bq show --project_id="${PROJECT_ID}" "${BQ_DATASET}" >/dev/null 2>&1; then
@@ -94,7 +109,7 @@ fi
 
 
 # 4. CREACIÓN DEL BUCKET DE STAGING PARA DATAFLOW
-echo "### [4/6] Configurando Bucket de almacenamiento intermedio..."
+echo "### [5/7] Configurando Bucket de almacenamiento intermedio..."
 
 if ! gsutil ls -b "gs://${GCS_BUCKET_NAME}" >/dev/null 2>&1; then
     echo " Creando Storage Bucket: gs://${GCS_BUCKET_NAME}..."
@@ -104,7 +119,7 @@ else
 fi
 
 # 5. VALIDACIÓN / CREACIÓN DE LA SERVICE ACCOUNT PARA WORKERS DE DATAFLOW
-echo "### [5/6] Validando permisos y Service Account para Dataflow Workers..."
+echo "### [6/7] Validando permisos y Service Account para Dataflow Workers..."
 
 # 5.1 Verificar si la Service Account ya existe, si no, crearla y asignar roles necesarios
 if ! gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(email)" | grep -q "^${SA_DATAFLOW}$"; then
@@ -125,19 +140,8 @@ else
     echo " [OK] La Service Account ${SA_DATAFLOW} ya está configurada."
 fi
 
-# 5.2 Autorizar al Dataflow Service Agent para suplantar al Worker (requisito para pipelines con SA personalizada)
-export PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)")
-export DATAFLOW_SERVICE_AGENT="service-${PROJECT_NUMBER}@dataflow-service-producer-prod.iam.gserviceaccount.com"
-
-echo " Autorizando al Dataflow Service Agent para suplantar al Worker..."
-gcloud iam service-accounts add-iam-policy-binding "${SA_DATAFLOW}" \
-    --project="${PROJECT_ID}" \
-    --member="serviceAccount:${DATAFLOW_SERVICE_AGENT}" \
-    --role="roles/iam.serviceAccountUser" \
-    --quiet >/dev/null
-
 # 6. DESPLIEGUE DEL PIPELINE DE DATAFLOW (STREAMING)
-echo "### [6/6] Lanzando Job de Dataflow en modo Streaming..."
+echo "### [7/7] Lanzando Job de Dataflow en modo Streaming..."
 
 # Verificar si el Job ya se encuentra corriendo para evitar duplicaciones analíticas
 if ! gcloud dataflow jobs list --project="${PROJECT_ID}" --region="${REGION}" --status=active --format="value(name)" | grep -q "^${DATAFLOW_JOB_NAME}$"; then
