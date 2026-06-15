@@ -31,20 +31,19 @@ gcloud config set compute/region "$REGION"
 echo " - Región configurada: $REGION"
 
 # 2. Configuración de Variables de Entorno
-echo "### [2/7] Inicializando variables de entorno..."
+echo "### [2/8] Inicializando variables de entorno..."
 export PROJECT_ID=$(gcloud config get-value project)
-# Origenes de datos
 export TOPIC_NAME="registros_compras"
-export SUBSCRIPTION_NAME="${TOPIC_NAME}-subscription"
+export SUBSCRIPTION_NAME="${TOPIC_NAME}-bq-direct-sub"
+
+export SA_EMAIL="webhook-registros-compras@${PROJECT_ID}.iam.gserviceaccount.com"
+#export SERVICE_NAME="webhook-registros-compras"
+
 # Destino Analítico en BigQuery
 export BQ_DATASET="analytics_compras"
 export BQ_TABLE="raw_registros_compras"
 
-# Infraestructura Operativa de Dataflow
-export GCS_BUCKET_NAME="${PROJECT_ID}-dataflow-staging"
-export DATAFLOW_JOB_NAME="df-stream-pubsub-to-bq-prod"
-export SA_DATAFLOW="sa-dataflow-worker@${PROJECT_ID}.iam.gserviceaccount.com"
-
+# Información de contexto para el usuario
 echo " Proyecto:    ${PROJECT_ID}"
 echo " Región:      ${REGION}"
 echo " Suscripción: ${SUBSCRIPTION_NAME}"
@@ -53,13 +52,10 @@ echo " Destino BQ:  ${BQ_DATASET}.${BQ_TABLE}"
 # 3. HABILITACIÓN DE APIS NECESARIAS PARA EL STACK ANALÍTICO
 echo "### [3/7] Verificando y habilitando APIs de Google Cloud..."
 
+# ¿Que APIS requiere para activar este servicio?
 gcloud services enable \
-    dataflow.googleapis.com \
-    bigquery.googleapis.com \
-    storage.googleapis.com \
-    compute.googleapis.com \
     pubsub.googleapis.com \
-    iam.googleapis.com \
+    bigquery.googleapis.com \
     --quiet
 
 echo " [OK] APIs del stack analítico activadas correctamente."
@@ -107,56 +103,36 @@ else
     echo " La tabla ${BQ_DATASET}.${BQ_TABLE} ya existe. Omitiendo creación."
 fi
 
-
-# 4. CREACIÓN DEL BUCKET DE STAGING PARA DATAFLOW
-echo "### [5/7] Configurando Bucket de almacenamiento intermedio..."
-
-if ! gsutil ls -b "gs://${GCS_BUCKET_NAME}" >/dev/null 2>&1; then
-    echo " Creando Storage Bucket: gs://${GCS_BUCKET_NAME}..."
-    gsutil mb -l "${REGION}" -p "${PROJECT_ID}" "gs://${GCS_BUCKET_NAME}/"
-else
-    echo " El bucket gs://${GCS_BUCKET_NAME} ya existe."
-fi
-
-# 5. VALIDACIÓN / CREACIÓN DE LA SERVICE ACCOUNT PARA WORKERS DE DATAFLOW
-echo "### [6/7] Validando permisos y Service Account para Dataflow Workers..."
+# 5. Asignación de Permisos
+echo "### [5/7] Configurando seguridad e Identidades (IAM)..."
 
 # 5.1 Verificar si la Service Account ya existe, si no, crearla y asignar roles necesarios
-if ! gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(email)" | grep -q "^${SA_DATAFLOW}$"; then
-    echo " Creando SA para Dataflow Workers..."
-    gcloud iam service-accounts create "sa-dataflow-worker" \
-        --description="Service Account para los workers del pipeline de Dataflow" \
-        --display-name="Dataflow Worker Service Account" \
-        --project="${PROJECT_ID}"
-    
-    sleep 10 # Espera de cortesía para propagación de IAMs
-    echo " Asignando roles necesarios (Dataflow Worker, Pub/Sub Subscriber, BigQuery DataEditor)..."
-    for ROLE in roles/dataflow.worker roles/pubsub.subscriber roles/bigquery.dataEditor roles/storage.objectAdmin; do
-        gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-            --member="serviceAccount:${SA_DATAFLOW}" \
-            --role="${ROLE}" >/dev/null
-    done
+if  gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(email)" | grep -q "^${SA_EMAIL}$"; then
+    echo " Asignando roles necesarios (BigQuery.DataEditor)..."
+    gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+        --member="serviceAccount:${SA_EMAIL}" \
+        --role="roles/bigquery.dataEditor" >/dev/null
 else
-    echo " [OK] La Service Account ${SA_DATAFLOW} ya está configurada."
+    echo " [OK] La Service Account ${SA_EMAIL} ya está configurada."
 fi
 
 # 7. DESPLIEGUE DEL PIPELINE DE DATAFLOW (STREAMING)
-echo "### [7/7] Lanzando Job de Dataflow en modo Streaming..."
-
-# Verificar si el Job ya se encuentra corriendo para evitar duplicaciones analíticas
-if ! gcloud dataflow jobs list --project="${PROJECT_ID}" --region="${REGION}" --status=active --format="value(name)" | grep -q "^${DATAFLOW_JOB_NAME}$"; then
+echo "### [6/7] Creando la suscripción directa de Pub/Sub a BigQuery..." 
+if ! gcloud pubsub subscriptions list --project="${PROJECT_ID}" --format="value(name)" | grep -q "${SUBSCRIPTION_NAME}$"; then
     
-    gcloud dataflow jobs run "${DATAFLOW_JOB_NAME}" \
-        --gcs-location="gs://dataflow-templates-${REGION}/latest/PubSub_Subscription_to_BigQuery" \
-        --region="${REGION}" \
+    echo " Desplegando BigQuery Subscription..."
+    gcloud pubsub subscriptions create "${SUBSCRIPTION_NAME}" \
+        --topic="${TOPIC_NAME}" \
         --project="${PROJECT_ID}" \
-        --service-account-email="${SA_DATAFLOW}" \
-        --staging-location="gs://${GCS_BUCKET_NAME}/staging/" \
-        --parameters="inputSubscription=projects/${PROJECT_ID}/subscriptions/${SUBSCRIPTION_NAME},outputTableSpec=${PROJECT_ID}:${BQ_DATASET}.${BQ_TABLE}"
-
-    echo " ¡Job de Dataflow lanzado con éxito!"
+        --bigquery-table="${PROJECT_ID}:${BQ_DATASET}.${BQ_TABLE}" \
+        --drop-unknown-fields \
+        --ack-deadline=60
+        
+    echo " ¡Suscripción enlazada con éxito!"
 else
-    echo " WARNING: Ya existe un Job activo con el nombre ${DATAFLOW_JOB_NAME}. Omitiendo despliegue."
+    echo " WARNING: La suscripción '${SUBSCRIPTION_NAME}' ya existe. Omitiendo creación."
 fi
 
-echo "========== [DEPLOYMENT SUCCESSFUL - END] =========="
+echo "=============================================================================="
+echo " ¡DESPLIEGUE EXITOSO! El pipeline Zero-Code Pub/Sub -> BigQuery está activo."
+echo "=============================================================================="
