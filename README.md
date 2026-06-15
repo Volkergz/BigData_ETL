@@ -98,7 +98,7 @@ cd ./BigData_ETL
 3. Otorgamos permiso de ejecusión a los archivos
 
 ```
-chmod +x /Streaming/*/*.sh
+chmod +x ./Streaming/*/*.sh
 ```
 
 ## 1. Función: creación del webhook (Pub/Sub)
