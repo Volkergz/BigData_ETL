@@ -106,17 +106,21 @@ fi
 # 5. Asignación de Permisos
 echo "### [5/7] Configurando seguridad e Identidades (IAM)..."
 
-# 5.1 Verificar si la Service Account ya existe, si no, crearla y asignar roles necesarios
-if  gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(email)" | grep -q "^${SA_EMAIL}$"; then
-    echo " Asignando roles necesarios (BigQuery.DataEditor)..."
-    gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-        --member="serviceAccount:${SA_EMAIL}" \
-        --role="roles/bigquery.dataEditor" >/dev/null
-else
-    echo " [OK] La Service Account ${SA_EMAIL} ya está configurada."
-fi
+# 5.1 Obtener el número del proyecto para identificar al Service Agent interno de Pub/Sub
+export PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)")
+export PUBSUB_SERVICE_ACCOUNT="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
 
-# 7. DESPLIEGUE DEL PIPELINE DE DATAFLOW (STREAMING)
+echo " Otorgando permisos de escritura al Agente de Pub/Sub sobre BigQuery..."
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${PUBSUB_SERVICE_ACCOUNT}" \
+    --role="roles/bigquery.dataEditor" \
+    --quiet >/dev/null
+
+# 5.2 Obtener la Service Account por defecto de Compute Engine para la suplantación (Solución al error de permisos)
+export COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+
+# 7. CREACIÓN DE LA SUSCRIPCIÓN DIRECTA DE PUBSUB A BIGQUERY
 echo "### [6/7] Creando la suscripción directa de Pub/Sub a BigQuery..." 
 if ! gcloud pubsub subscriptions list --project="${PROJECT_ID}" --format="value(name)" | grep -q "${SUBSCRIPTION_NAME}$"; then
     
@@ -126,13 +130,11 @@ if ! gcloud pubsub subscriptions list --project="${PROJECT_ID}" --format="value(
         --project="${PROJECT_ID}" \
         --bigquery-table="${PROJECT_ID}:${BQ_DATASET}.${BQ_TABLE}" \
         --drop-unknown-fields \
-        --ack-deadline=60
+        --ack-deadline=60 \
+        --impersonate-service-account="${COMPUTE_SA}" \
+        --quiet
         
     echo " ¡Suscripción enlazada con éxito!"
 else
     echo " WARNING: La suscripción '${SUBSCRIPTION_NAME}' ya existe. Omitiendo creación."
 fi
-
-echo "=============================================================================="
-echo " ¡DESPLIEGUE EXITOSO! El pipeline Zero-Code Pub/Sub -> BigQuery está activo."
-echo "=============================================================================="

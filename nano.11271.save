@@ -1,7 +1,0 @@
-cd ..
-rm -rf ./BigData_ETL/
-git clone https://github.com/Volkergz/BigData_ETL.git
-cd ./BigData_ETL/
-chmod +x ./*/*.sh
-
-./data-raw/load.sh
