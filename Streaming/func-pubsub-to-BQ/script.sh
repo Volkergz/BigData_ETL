@@ -7,7 +7,7 @@ IFS=$'\n\t'
 echo "========== [START] Inicializando Pipeline Analítico (Pub/Sub -> BigQuery) =========="
 
 # 1. Detección Inteligente de Región (Org Policy Compliant)
-echo "### [1/7] Autodetectando región bajo restricciones de Resource Location..."
+echo "### [1/6] Autodetectando región bajo restricciones de Resource Location..."
 
 RAW_LOCATION=$(gcloud beta resource-manager org-policies describe gcp.resourceLocations \
     --project="$(gcloud config get-value project)" 2>/dev/null || echo "")
@@ -31,7 +31,7 @@ gcloud config set compute/region "$REGION"
 echo " - Región configurada: $REGION"
 
 # 2. Configuración de Variables de Entorno
-echo "### [2/8] Inicializando variables de entorno..."
+echo "### [2/6] Inicializando variables de entorno..."
 export PROJECT_ID=$(gcloud config get-value project)
 export TOPIC_NAME="registros_compras"
 export SUBSCRIPTION_NAME="${TOPIC_NAME}-bq-direct-sub"
@@ -50,7 +50,7 @@ echo " Suscripción: ${SUBSCRIPTION_NAME}"
 echo " Destino BQ:  ${BQ_DATASET}.${BQ_TABLE}"
 
 # 3. HABILITACIÓN DE APIS NECESARIAS PARA EL STACK ANALÍTICO
-echo "### [3/7] Verificando y habilitando APIs de Google Cloud..."
+echo "### [3/6] Verificando y habilitando APIs de Google Cloud..."
 
 # ¿Que APIS requiere para activar este servicio?
 gcloud services enable \
@@ -62,7 +62,7 @@ echo " [OK] APIs del stack analítico activadas correctamente."
 
 
 # 3. CREACIÓN DEL DATASET Y TABLA OPTIMIZADA EN BIGQUERY
-echo "### [4/7] Configurando almacenamiento optimizado en BigQuery..."
+echo "### [4/6] Configurando almacenamiento optimizado en BigQuery..."
 
 # 3.1 Crear Dataset si no existe
 if ! bq show --project_id="${PROJECT_ID}" "${BQ_DATASET}" >/dev/null 2>&1; then
@@ -104,24 +104,20 @@ else
 fi
 
 # 5. Asignación de Permisos
-echo "### [5/7] Configurando seguridad e Identidades (IAM)..."
+echo "### [5/6] Configurando seguridad e Identidades (IAM)..."
 
-# 5.1 Obtener el número del proyecto para identificar al Service Agent interno de Pub/Sub
-export PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)")
-export PUBSUB_SERVICE_ACCOUNT="service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com"
+# 5.1 Verificar si la Service Account ya existe, si no, crearla y asignar roles necesarios
+if  gcloud iam service-accounts list --project="${PROJECT_ID}" --format="value(email)" | grep -q "^${SA_EMAIL}$"; then
+    echo " Asignando roles necesarios (BigQuery.DataEditor)..."
+    gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+        --member="serviceAccount:${SA_EMAIL}" \
+        --role="roles/bigquery.dataEditor" >/dev/null
+else
+    echo " [OK] La Service Account ${SA_EMAIL} ya está configurada."
+fi
 
-echo " Otorgando permisos de escritura al Agente de Pub/Sub sobre BigQuery..."
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-    --member="serviceAccount:${PUBSUB_SERVICE_ACCOUNT}" \
-    --role="roles/bigquery.dataEditor" \
-    --quiet >/dev/null
-
-# 5.2 Obtener la Service Account por defecto de Compute Engine para la suplantación (Solución al error de permisos)
-export COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-
-
-# 7. CREACIÓN DE LA SUSCRIPCIÓN DIRECTA DE PUBSUB A BIGQUERY
-echo "### [6/7] Creando la suscripción directa de Pub/Sub a BigQuery..." 
+# 6. DESPLIEGUE DEL PIPELINE DE DATAFLOW (STREAMING)
+echo "### [6/6] Creando la suscripción directa de Pub/Sub a BigQuery..." 
 if ! gcloud pubsub subscriptions list --project="${PROJECT_ID}" --format="value(name)" | grep -q "${SUBSCRIPTION_NAME}$"; then
     
     echo " Desplegando BigQuery Subscription..."
@@ -130,11 +126,13 @@ if ! gcloud pubsub subscriptions list --project="${PROJECT_ID}" --format="value(
         --project="${PROJECT_ID}" \
         --bigquery-table="${PROJECT_ID}:${BQ_DATASET}.${BQ_TABLE}" \
         --drop-unknown-fields \
-        --ack-deadline=60 \
-        --impersonate-service-account="${COMPUTE_SA}" \
-        --quiet
+        --ack-deadline=60
         
     echo " ¡Suscripción enlazada con éxito!"
 else
     echo " WARNING: La suscripción '${SUBSCRIPTION_NAME}' ya existe. Omitiendo creación."
 fi
+
+echo "=============================================================================="
+echo " ¡DESPLIEGUE EXITOSO! El pipeline Zero-Code Pub/Sub -> BigQuery está activo."
+echo "=============================================================================="
